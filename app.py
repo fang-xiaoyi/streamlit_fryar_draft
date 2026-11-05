@@ -91,10 +91,14 @@ st.markdown(
 
 
 def money(value: float, decimals: int = 2) -> str:
+    if pd.isna(value):
+        return "—"
     return f"${value:,.{decimals}f}"
 
 
 def pct(value: float) -> str:
+    if pd.isna(value):
+        return "—"
     return f"{value:.0%}"
 
 
@@ -159,7 +163,7 @@ def _render_audience_mode() -> None:
         custom_text = ""
         if selected == "Other / write my own":
             custom_text = st.text_input("Please specify", max_chars=160)
-        submitted = st.form_submit_button("Submit anonymous response", use_container_width=True)
+        submitted = st.form_submit_button("Submit anonymous response", width="stretch")
 
     if submitted:
         submit_response(
@@ -196,10 +200,10 @@ def _render_live_results() -> None:
     )
     control_col, qr_col = st.columns([1.25, 1])
     with control_col:
-        if st.button("Start selected prompt", type="primary", use_container_width=True):
+        if st.button("Start selected prompt", type="primary", width="stretch"):
             set_active_prompt(selected, clear_responses=True)
             st.rerun()
-        if st.button("Clear responses for current prompt", use_container_width=True):
+        if st.button("Clear responses for current prompt", width="stretch"):
             clear_responses(active_prompt()["id"])
             st.rerun()
         st.info(
@@ -245,7 +249,7 @@ def _render_live_results() -> None:
             template="plotly_white",
             margin=dict(l=10, r=45, t=20, b=10),
         )
-        st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(figure, width="stretch", config={"displayModeBar": False})
 
         comments = recent_custom_responses(current["id"])
         if comments:
@@ -292,7 +296,7 @@ with st.sidebar:
     )
     audience_url = _url_with_mode(audience_url_input, "audience")
     try:
-        st.image(make_qr_bytes(audience_url), caption="Scan to answer", use_container_width=True)
+        st.image(make_qr_bytes(audience_url), caption="Scan to answer", width="stretch")
     except ModuleNotFoundError:
         st.caption("QR preview requires: pip install -r requirements.txt")
     screen_url = _url_with_mode(audience_url_input, "screen")
@@ -539,7 +543,7 @@ with st.sidebar:
         if st.button(
             "Load latest official RMA quote",
             key=f"load_rma_{commodity}",
-            use_container_width=True,
+            width="stretch",
         ):
             try:
                 with st.spinner("Requesting the latest RMA LRP quote..."):
@@ -774,7 +778,7 @@ if kind == "poultry":
         ["Feed-cost comparison", "Margin distribution", "Assumptions"]
     )
     with poultry_tab1:
-        st.dataframe(poultry_display, use_container_width=True, hide_index=True)
+        st.dataframe(poultry_display, width="stretch", hide_index=True)
         st.caption(
             "The feed-cost budget and target margin are user-defined thresholds. Hedging can reduce input-price variation while leaving output-price, production, and basis risks.")
     with poultry_tab2:
@@ -799,7 +803,7 @@ if kind == "poultry":
             template="plotly_white",
             margin=dict(l=10, r=10, t=55, b=10),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with poultry_tab3:
         st.markdown(
             f"""
@@ -844,9 +848,26 @@ params = {
 simulation, simulation_meta = simulate_strategies(params, strategies)
 summary = summarize(simulation, params)
 summary_display = summary.copy()
-for column in ["Expected net price", "P10 net price", "P50 net price", "P90 net price", "Expected margin"]:
+for column in [
+    "Expected net price",
+    "P10 net price",
+    "P50 net price",
+    "P90 net price",
+    "P10 margin",
+    "P50 margin",
+    "P90 margin",
+    "Expected margin",
+    "Expected total margin",
+    "Expected loss when loss",
+    "CVaR10 margin",
+]:
     summary_display[column] = summary_display[column].map(lambda x: money(float(x)))
-for column in ["Target price probability", "Loss probability"]:
+for column in [
+    "Target price probability",
+    "Loss probability",
+    "Positive margin probability",
+    "Probability beats unhedged",
+]:
     summary_display[column] = summary_display[column].map(lambda x: pct(float(x)))
 
 
@@ -861,12 +882,21 @@ st.caption(
 )
 
 best_row = summary.loc[summary["Expected margin"].idxmax()]
-lowest_downside = summary.loc[summary["P10 net price"].idxmax()]
+lowest_downside = summary.loc[summary["P10 margin"].idxmax()]
+lowest_loss = summary.loc[summary["Loss probability"].idxmin()]
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Highest expected margin", best_row["Strategy"], money(float(best_row["Expected margin"])))
-col2.metric("Strongest P10 net price", lowest_downside["Strategy"], money(float(lowest_downside["P10 net price"])))
-col3.metric("Target price", money(target_price), "user-defined objective")
+col2.metric("Strongest P10 margin", lowest_downside["Strategy"], money(float(lowest_downside["P10 margin"])))
+col3.metric("Lowest loss probability", lowest_loss["Strategy"], pct(float(lowest_loss["Loss probability"])))
 col4.metric("Scenario count", f"{len(simulation):,}", "illustrative draws")
+
+st.info(
+    "Risk reading: P10/P50/P90 margin show the lower-tail, typical, and upper-tail "
+    "profit outcomes. Target price probability measures how often the simulated net "
+    "price reaches the user-defined target; loss probability measures how often margin "
+    "is negative. CVaR10 is the average margin in the worst 10% of simulations. "
+    "These are model-implied results, not guarantees."
+)
 
 if view == "Extension demo":
     st.markdown(
@@ -992,7 +1022,7 @@ if kind == "livestock":
                 hovermode="x unified",
                 margin=dict(l=10, r=10, t=55, b=10),
             )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
         with explanation_col:
             st.markdown("#### Selected scenario")
@@ -1029,7 +1059,7 @@ if kind == "livestock":
                     ],
                 }
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
         st.markdown(
@@ -1041,7 +1071,7 @@ with tab1:
     st.markdown("### What changes across strategies?")
     st.dataframe(
         summary_display,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             "Target price probability": st.column_config.TextColumn("Target probability"),
@@ -1076,7 +1106,7 @@ with tab1:
             template="plotly_white",
             margin=dict(l=10, r=10, t=55, b=10),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     with table_col:
         st.markdown("#### Decision reading")
         st.write(
@@ -1114,7 +1144,7 @@ with tab2:
         template="plotly_white",
         margin=dict(l=10, r=10, t=55, b=10),
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.caption(
         "This curve uses expected production and isolates the price-risk channel. The distribution chart above additionally allows production or quantity risk."
     )

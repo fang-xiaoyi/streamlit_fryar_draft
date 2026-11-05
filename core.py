@@ -387,6 +387,7 @@ def simulate_strategies(
         records.append(
             pd.DataFrame(
                 {
+                    "Draw": np.arange(len(terminal_price)),
                     "Strategy": strategy,
                     "Terminal price": terminal_price,
                     "Net price": net_price,
@@ -402,11 +403,27 @@ def simulate_strategies(
 def summarize(
     simulation: pd.DataFrame, params: dict[str, Any]
 ) -> pd.DataFrame:
-    """Summarize the outcomes in producer-friendly language."""
+    """Summarize outcomes as both probabilities and dollar outcomes."""
 
     target = params["target_price"]
+    unhedged = simulation[simulation["Strategy"] == "Unhedged / wait"]
+    unhedged_by_draw = (
+        unhedged.sort_values("Draw")["Margin"].to_numpy()
+        if not unhedged.empty and "Draw" in unhedged
+        else None
+    )
     rows: list[dict[str, Any]] = []
     for strategy, group in simulation.groupby("Strategy", sort=False):
+        margins = group["Margin"]
+        losses = margins[margins < 0]
+        tail_count = max(1, int(np.ceil(len(margins) * 0.10)))
+        cvar10_margin = margins.nsmallest(tail_count).mean()
+        probability_beats_unhedged = np.nan
+        if unhedged_by_draw is not None:
+            current_by_draw = group.sort_values("Draw")["Margin"].to_numpy()
+            probability_beats_unhedged = float(
+                np.mean(current_by_draw > unhedged_by_draw)
+            )
         rows.append(
             {
                 "Strategy": strategy,
@@ -414,9 +431,17 @@ def summarize(
                 "P10 net price": group["Net price"].quantile(0.10),
                 "P50 net price": group["Net price"].quantile(0.50),
                 "P90 net price": group["Net price"].quantile(0.90),
+                "P10 margin": margins.quantile(0.10),
+                "P50 margin": margins.quantile(0.50),
+                "P90 margin": margins.quantile(0.90),
                 "Target price probability": (group["Net price"] >= target).mean(),
                 "Loss probability": (group["Margin"] < 0).mean(),
-                "Expected margin": group["Margin"].mean(),
+                "Positive margin probability": (group["Margin"] >= 0).mean(),
+                "Expected margin": margins.mean(),
+                "Expected total margin": group["Total margin"].mean(),
+                "Expected loss when loss": losses.mean() if not losses.empty else np.nan,
+                "CVaR10 margin": cvar10_margin,
+                "Probability beats unhedged": probability_beats_unhedged,
             }
         )
 
