@@ -1,0 +1,24 @@
+{
+  "commodity": "corn",
+  "data": {
+    "beginning_stocks": 1922,
+    "ending_stocks": 1567,
+    "exports": 3275,
+    "farm_price": 4.8,
+    "production": 15800,
+    "total_use": 16180,
+    "yield": 178.5
+  },
+  "note": "The October-to-September comparison is a vintage comparison for the same 2026/27 marketing-year forecast. November 2026 WASDE was not yet released when this case was built.",
+  "parser_version": "usda-refresh-1.0",
+  "raw_sha256": "5b7bc06716213aa19c770b2c83c4b7c5cf1d90ec7639a801dc7291778dc67517",
+  "release_date": "2026-09-01",
+  "release_label": "Corn September 2026",
+  "retrieved_at": "2026-11-05T16:53:56.579699+00:00",
+  "revision": null,
+  "schema_version": 1,
+  "snapshot_id": "2026-09-01",
+  "source_label": "September 2026 WASDE",
+  "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde0926.pdf",
+  "validation_status": "passed"
+}

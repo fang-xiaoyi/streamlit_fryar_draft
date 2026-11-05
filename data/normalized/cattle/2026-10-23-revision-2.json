@@ -1,0 +1,30 @@
+{
+  "commodity": "cattle",
+  "data": {
+    "inventory": 11372,
+    "inventory_yoy_percent": 100,
+    "marketings": 1524,
+    "marketings_yoy_percent": 93,
+    "other_disappearance": 49000,
+    "other_disappearance_yoy_percent": 4,
+    "placements": 1777,
+    "placements_yoy_percent": 88
+  },
+  "note": "Cattle on Feed is a monthly flow report rather than a WASDE vintage. The release-to-release comparison therefore compares the October 1 inventory and September flows with the September 1 inventory and August flows; year-over-year percentages remain the primary market read.",
+  "parser_version": "usda-refresh-1.0",
+  "raw_sha256": "5ec2110b34410c4aeab1591e5cd62b89e642fb40e8c1129c98af6a4d5e7cc6a4",
+  "release_date": "2026-10-23",
+  "release_label": "Cattle October 2026 release",
+  "report_paths": {
+    "extension_report": "data/reports/cattle/2026-10-23-revision-2/extension_report.html",
+    "fact_sheet": "data/reports/cattle/2026-10-23-revision-2/fact_sheet.html",
+    "markdown": "data/reports/cattle/2026-10-23-revision-2/report.md"
+  },
+  "retrieved_at": "2026-11-05T16:53:59.458895+00:00",
+  "revision": 2,
+  "schema_version": 1,
+  "snapshot_id": "2026-10-23-revision-2",
+  "source_label": "October 2026 Cattle on Feed",
+  "source_url": "https://esmis.nal.usda.gov/sites/default/release-files/796119/cofd1026.pdf",
+  "validation_status": "passed"
+}

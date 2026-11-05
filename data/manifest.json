@@ -24,6 +24,30 @@
       "validation_status": "passed"
     },
     {
+      "commodity": "cattle",
+      "parser_version": "usda-refresh-1.0",
+      "raw_sha256": "5ec2110b34410c4aeab1591e5cd62b89e642fb40e8c1129c98af6a4d5e7cc6a4",
+      "release_date": "2026-10-23",
+      "release_label": "Cattle October 2026 release",
+      "retrieved_at": "2026-11-05T16:53:59.458895+00:00",
+      "revision": 2,
+      "snapshot_id": "2026-10-23-revision-2",
+      "source_url": "https://esmis.nal.usda.gov/sites/default/release-files/796119/cofd1026.pdf",
+      "validation_status": "passed"
+    },
+    {
+      "commodity": "corn",
+      "parser_version": "usda-refresh-1.0",
+      "raw_sha256": "5b7bc06716213aa19c770b2c83c4b7c5cf1d90ec7639a801dc7291778dc67517",
+      "release_date": "2026-09-01",
+      "release_label": "Corn September 2026",
+      "retrieved_at": "2026-11-05T16:53:56.579699+00:00",
+      "revision": null,
+      "snapshot_id": "2026-09-01",
+      "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde0926.pdf",
+      "validation_status": "passed"
+    },
+    {
       "commodity": "corn",
       "parser_version": "seed-2026.11",
       "raw_sha256": "seeded-case-no-raw-file",
@@ -32,6 +56,18 @@
       "revision": null,
       "snapshot_id": "2026-09-11",
       "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde0926.pdf",
+      "validation_status": "passed"
+    },
+    {
+      "commodity": "corn",
+      "parser_version": "usda-refresh-1.0",
+      "raw_sha256": "6cc97c08be7e683b6114ae8e16d49fce2f21dce3ed3f9933b0acbd2d37e6840b",
+      "release_date": "2026-10-01",
+      "release_label": "Corn October 2026",
+      "retrieved_at": "2026-11-05T16:53:47.448916+00:00",
+      "revision": null,
+      "snapshot_id": "2026-10-01",
+      "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde1026.pdf",
       "validation_status": "passed"
     },
     {
@@ -46,5 +82,5 @@
       "validation_status": "passed"
     }
   ],
-  "updated_at": "2026-11-04T00:00:00Z"
+  "updated_at": "2026-11-05T16:53:59.459432+00:00"
 }
