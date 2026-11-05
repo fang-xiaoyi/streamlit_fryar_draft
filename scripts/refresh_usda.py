@@ -393,6 +393,31 @@ def _snapshot_id(commodity: str, release_date: str, file_hash: str) -> tuple[str
     return f"{release_date}{suffix}", revision
 
 
+def _sync_latest_pointer(commodity: str, manifest: dict[str, Any] | None = None) -> None:
+    """Point latest.json at the newest validated release for a commodity."""
+
+    manifest = manifest or _load_json(MANIFEST_PATH, {"schema_version": 1, "snapshots": []})
+    candidates = [
+        item
+        for item in manifest.get("snapshots", [])
+        if item.get("commodity") == commodity
+        and item.get("validation_status") == "passed"
+        and item.get("release_date")
+    ]
+    if not candidates:
+        return
+    selected = max(
+        candidates,
+        key=lambda item: (str(item.get("release_date")), str(item.get("snapshot_id"))),
+    )
+    latest = _load_json(LATEST_PATH, {"schema_version": 1, "latest": {}})
+    latest.setdefault("schema_version", 1)
+    latest.setdefault("latest", {})
+    latest["latest"][commodity] = selected["snapshot_id"]
+    latest["updated_at"] = _now()
+    _write_json(LATEST_PATH, latest)
+
+
 def _report_markdown(case: Any) -> str:
     return (
         f"# {case.commodity} USDA release report\n\n"
@@ -432,6 +457,7 @@ def _store_snapshot(
     )
     if existing is not None and not dry_run:
         print(f"Unchanged {commodity} {release_date.isoformat()}; keeping {snapshot_id}.")
+        _sync_latest_pointer(commodity)
         return existing
     record = {
         "schema_version": 1,
@@ -495,12 +521,7 @@ def _store_snapshot(
     )
     _write_json(MANIFEST_PATH, manifest)
 
-    latest = _load_json(LATEST_PATH, {"schema_version": 1, "latest": {}})
-    latest.setdefault("schema_version", 1)
-    latest.setdefault("latest", {})
-    latest["latest"][commodity] = snapshot_id
-    latest["updated_at"] = _now()
-    _write_json(LATEST_PATH, latest)
+    _sync_latest_pointer(commodity, manifest)
 
     # A release report is created only after normalized data, manifest, and
     # latest pointer have all been written successfully.
