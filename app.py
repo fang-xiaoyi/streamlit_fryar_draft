@@ -861,14 +861,19 @@ for column in [
     "Expected loss when loss",
     "CVaR10 margin",
 ]:
-    summary_display[column] = summary_display[column].map(lambda x: money(float(x)))
+    # Keep the UI compatible with a previously cached/older core.py during
+    # deployment.  The current core returns every metric below, but a partial
+    # upload should not turn a missing optional column into a KeyError.
+    if column in summary_display.columns:
+        summary_display[column] = summary_display[column].map(lambda x: money(float(x)))
 for column in [
     "Target price probability",
     "Loss probability",
     "Positive margin probability",
     "Probability beats unhedged",
 ]:
-    summary_display[column] = summary_display[column].map(lambda x: pct(float(x)))
+    if column in summary_display.columns:
+        summary_display[column] = summary_display[column].map(lambda x: pct(float(x)))
 
 
 quantity_text = (
