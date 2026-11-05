@@ -58,7 +58,7 @@ The hedging/marketing page adds the next JD layer: it breaks total cost into ite
 
 `pages/8_Monthly_Report_Studio.py` is the operator-facing publication layer for the second JD initiative. It reads the same validated monthly release pair as the USDA report page and assembles a repeatable package containing a Fryar-branded Fact Sheet, Full Extension Report, Markdown editorial draft, normalized comparison CSV, and human-review checklist. The browser session does not overwrite history; the scheduled refresh job remains responsible for writing immutable snapshots and archived report bundles under `data/`.
 
-The content map makes the future full report explicit: executive interpretation, supply and demand, market price response, commodity price forecast, hedging and marketing implications, and sources/methods. The current seeded release can be previewed and downloaded now; licensed market-price data and forecast outputs are labeled as inputs to connect next rather than silently invented.
+The branded Full Extension Report now embeds the current analytical chain: executive interpretation, supply and demand, the seeded Corn market-price event window, the transparent low/middle/high price forecast, the Decision Lab hedging summary, and sources/methods. The Corn event window uses the same public continuous-futures reference shown on the Market Price Response page and clearly labels the deferred spread as unavailable; a production pipeline should replace it with licensed contract-level data when redistribution is permitted. The forecast and hedging sections retain visible assumptions rather than silently inventing live inputs.
 
 ## Live audience interaction for the stakeholder presentation
 

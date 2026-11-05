@@ -216,9 +216,9 @@ content_map = pd.DataFrame(
     [
         ["Executive interpretation", "What changed and why it matters", "Producer-facing narrative", "Auto-filled; review tone"],
         ["Supply and demand", "Reported quantities and formula-derived changes", "Balance-sheet table and ratios", "Auto-filled from snapshot"],
-        ["Market price response", "Price move and calendar spread context", "Separate market-response section", "Add licensed/manual data when available"],
-        ["Commodity price forecast", "Low / middle / high scenarios", "Range plus uncertainty caveat", "Pull from forecast page"],
-        ["Hedging and marketing implications", "Break-even, costs, benchmarks, strategies", "Decision cue and risk trade-off", "Review assumptions"],
+        ["Market price response", "Price move and calendar spread context", "Separate market-response section", "Corn seed connected; deferred spread still unavailable"],
+        ["Commodity price forecast", "Low / middle / high scenarios", "Range plus uncertainty caveat", "Transparent Corn seed connected"],
+        ["Hedging and marketing implications", "Break-even, costs, benchmarks, strategies", "Decision cue and risk trade-off", "Decision Lab formula connected; review assumptions"],
         ["Sources and methods", "Reproducibility and data provenance", "Official links, parser, vintage", "Required before release"],
     ],
     columns=["Report section", "Question answered", "Audience output", "Current status"],

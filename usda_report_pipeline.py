@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import html
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -21,6 +22,8 @@ from typing import Any
 
 import pandas as pd
 import requests
+
+from core import simulate_strategies, strategy_options, summarize
 
 
 FRYAR_CARDINAL = "#9E2B44"
@@ -375,11 +378,265 @@ def _html_table(case: ReleaseCase) -> str:
     )
 
 
+def _market_response_snapshot(case: ReleaseCase) -> dict[str, Any]:
+    """Return the validated public event-study seed for the Corn case.
+
+    The report keeps this separate from the USDA balance sheet because an
+    observed price response is not a causal price forecast.  The seed is the
+    same public continuous-futures reference shown on the Market Price Response
+    page.  A production pipeline should replace it with licensed contract-level
+    data when redistribution is permitted.
+    """
+
+    if case.key != "corn" or case.current_release_date != "2026-10-09":
+        return {"available": False, "reason": "No archived market-price event table is available for this vintage."}
+
+    rows = [
+        ("Pre-release", "2026-10-08", 5.003),
+        ("Release day", "2026-10-09", 4.798),
+        ("+1 trading day", "2026-10-12", 4.830),
+        ("+5 trading days", "2026-10-16", 4.742),
+    ]
+    pre = rows[0][2]
+    for index, row in enumerate(rows):
+        rows[index] = (row[0], row[1], row[2], row[2] - pre, (row[2] / pre - 1.0) * 100.0)
+    release_change = rows[1][2] - pre
+    return {
+        "available": True,
+        "rows": rows,
+        "release_change": release_change,
+        "release_change_pct": release_change / pre * 100.0,
+        "spread_available": False,
+        "source_label": "Yahoo Finance continuous Corn futures reference",
+        "source_url": "https://finance.yahoo.com/quote/ZC=F/history/",
+        "interpretation": (
+            "The nearby continuous reference fell $0.205/bu on the release-day "
+            "comparison. Ending stocks increased by 282 million bushels, so the "
+            "directions are consistent with a softer balance-sheet signal; the "
+            "event study does not claim that the report alone caused the move."
+        ),
+    }
+
+
+def _forecast_snapshot(case: ReleaseCase) -> dict[str, Any]:
+    """Compute the transparent low/middle/high forecast used in the forecast page."""
+
+    if case.key != "corn":
+        return {"available": False, "reason": "A commodity-specific forecast anchor is not yet available for this report case."}
+
+    current = case.current
+    current_stu = float(current["ending_stocks"]) / float(current["total_use"]) * 100.0
+    reference_stu = 12.0
+    stu_beta = -0.15
+    anchor = float(current["farm_price"])
+    stu_adjustment = stu_beta * (current_stu - reference_stu)
+    middle = anchor + stu_adjustment
+    annual_iv = 0.25
+    horizon_days = 180
+    band_multiplier = 1.0
+    width = middle * annual_iv * math.sqrt(horizon_days / 365.0) * band_multiplier
+    low = max(0.0, middle - width)
+    high = middle + width
+
+    benchmark_path = Path(__file__).resolve().parent / "data" / "benchmarks" / "corn_price_benchmarks.csv"
+    try:
+        benchmark_frame = pd.read_csv(benchmark_path)
+        benchmark_frame = benchmark_frame[
+            benchmark_frame["comparable_to_us_farm_price"].astype(str).str.lower().eq("yes")
+        ].copy()
+        benchmark_frame["price_usd_bu"] = pd.to_numeric(benchmark_frame["price_value"], errors="coerce")
+    except (OSError, pd.errors.ParserError, KeyError):
+        benchmark_frame = pd.DataFrame(columns=["source", "price_usd_bu", "source_note"])
+    return {
+        "available": True,
+        "anchor": anchor,
+        "current_stu": current_stu,
+        "reference_stu": reference_stu,
+        "stu_adjustment": stu_adjustment,
+        "middle": middle,
+        "width": width,
+        "low": low,
+        "high": high,
+        "annual_iv": annual_iv,
+        "horizon_days": horizon_days,
+        "band_multiplier": band_multiplier,
+        "benchmarks": benchmark_frame,
+    }
+
+
+def _hedging_snapshot(case: ReleaseCase) -> dict[str, Any]:
+    """Reuse the Decision Lab simulation functions for a report-level cue."""
+
+    if case.key != "corn":
+        return {"available": False, "reason": "The report-level hedging example is currently seeded for Corn."}
+
+    current_price = float(case.current["farm_price"])
+    acres = 100.0
+    yield_per_acre = 180.0
+    cost_per_acre = 670.0
+    basis = -0.25
+    storage = 0.15
+    break_even_cash = cost_per_acre / yield_per_acre
+    current_net_cash = current_price + basis - storage
+    cushion = current_net_cash - break_even_cash
+    operation_params = {
+        "kind": "crop",
+        "acres": acres,
+        "yield_per_acre": yield_per_acre,
+        "cost_per_acre": cost_per_acre,
+        "base_price": current_price,
+        "basis": basis,
+        "storage": storage,
+        "annual_vol": 0.25,
+        "yield_cv": 0.12,
+        "target_price": break_even_cash,
+        "strike": current_price,
+        "premium": 0.18,
+        "hedge_ratio": 0.50,
+        "horizon_months": 6.0,
+    }
+    strategies = strategy_options("crop")
+    simulation, simulation_meta = simulate_strategies(operation_params, strategies, n=8000, seed=2027)
+    summary = summarize(simulation, operation_params)
+    return {
+        "available": True,
+        "current_price": current_price,
+        "current_net_cash": current_net_cash,
+        "break_even_cash": break_even_cash,
+        "break_even_futures": break_even_cash - basis + storage,
+        "cushion": cushion,
+        "margin_per_acre": cushion * yield_per_acre,
+        "total_margin": cushion * yield_per_acre * acres,
+        "cost_per_acre": cost_per_acre,
+        "basis": basis,
+        "storage": storage,
+        "summary": summary,
+        "simulation_meta": simulation_meta,
+        "assumption_note": (
+            "Illustrative 100-acre Corn operation using $670/acre cost, 180 bu/acre "
+            "yield, 50% hedge share, 25% annualized price volatility, and a six-month horizon."
+        ),
+    }
+
+
+def _format_report_number(value: object, decimals: int = 2) -> str:
+    if value is None or pd.isna(value):
+        return "—"
+    return f"{float(value):,.{decimals}f}"
+
+
+def _integrated_report_sections(case: ReleaseCase) -> str:
+    """Render the analytical layers that now feed the branded full report."""
+
+    response = _market_response_snapshot(case)
+    if response.get("available"):
+        response_rows = []
+        for label, observed_date, price, move, move_pct in response["rows"]:
+            response_rows.append(
+                "<tr>"
+                f"<td>{html.escape(label)}</td>"
+                f"<td>{html.escape(observed_date)}</td>"
+                f"<td>${price:.3f}</td>"
+                f"<td>{move:+.3f}</td>"
+                f"<td>{move_pct:+.2f}%</td>"
+                "</tr>"
+            )
+        response_html = f"""
+<section class="module">
+<h2>Market price response</h2>
+<p class="module-lead">Observed market response around the release, shown separately from the USDA balance-sheet interpretation.</p>
+<table class="module-table"><thead><tr><th>Window</th><th>Date</th><th>Nearby reference</th><th>Move vs. pre-release</th><th>Move (%)</th></tr></thead><tbody>{''.join(response_rows)}</tbody></table>
+<div class="module-callout"><strong>Interpretation.</strong> {html.escape(response['interpretation'])}</div>
+<p class="module-note">Calendar spread adjustment: unavailable in this archived seed because the deferred contract was not loaded from the same contract-level source. Source: <a href="{html.escape(response['source_url'])}">{html.escape(response['source_label'])}</a>. This is an observed event window, not a causal estimate or price guarantee.</p>
+</section>
+"""
+    else:
+        response_html = f"""
+<section class="module">
+<h2>Market price response</h2>
+<div class="module-callout"><strong>Data status.</strong> {html.escape(str(response['reason']))} The full report template keeps this section visible so a scheduled pipeline can add licensed nearby and deferred contract prices without changing the report layout.</div>
+</section>
+"""
+
+    forecast = _forecast_snapshot(case)
+    if forecast.get("available"):
+        benchmark_rows = []
+        for _, row in forecast["benchmarks"].head(3).iterrows():
+            benchmark_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('source', '')))}</td>"
+                f"<td>${float(row['price_usd_bu']):.2f}/bu</td>"
+                f"<td>{html.escape(str(row.get('source_note', '')))}</td>"
+                "</tr>"
+            )
+        forecast_html = f"""
+<section class="module">
+<h2>Commodity price forecast</h2>
+<p class="module-lead">A transparent range connects the USDA farm-price anchor to the current stocks-to-use signal and an uncertainty band.</p>
+<div class="module-grid"><div class="module-card"><span>Low scenario</span><strong>${forecast['low']:.2f}/bu</strong></div><div class="module-card"><span>Middle scenario</span><strong>${forecast['middle']:.2f}/bu</strong></div><div class="module-card"><span>High scenario</span><strong>${forecast['high']:.2f}/bu</strong></div></div>
+<p><strong>Interpretation.</strong> The current stocks-to-use ratio is {forecast['current_stu']:.1f}% versus a {forecast['reference_stu']:.1f}% reference, adding ${forecast['stu_adjustment']:+.2f}/bu to the ${forecast['anchor']:.2f}/bu USDA anchor. The ${forecast['width']:.2f}/bu band uses {forecast['annual_iv']:.0%} annualized volatility over {forecast['horizon_days']} days at a {forecast['band_multiplier']:.1f}× multiplier.</p>
+<table class="module-table"><thead><tr><th>Benchmark</th><th>Reference</th><th>Comparability note</th></tr></thead><tbody>{''.join(benchmark_rows)}</tbody></table>
+<p class="module-note">The band is a scenario range, not a guaranteed probability of profit. Options-implied volatility is a manual prototype input until a licensed contract-level options feed is connected.</p>
+</section>
+"""
+    else:
+        forecast_html = f"""
+<section class="module">
+<h2>Commodity price forecast</h2>
+<div class="module-callout"><strong>Data status.</strong> {html.escape(str(forecast['reason']))}</div>
+</section>
+"""
+
+    hedging = _hedging_snapshot(case)
+    if hedging.get("available"):
+        margin_status = "favorable" if hedging["cushion"] > 0.25 else "near break-even" if hedging["cushion"] >= -0.25 else "unfavorable"
+        strategy_rows = []
+        for _, row in hedging["summary"].iterrows():
+            expected_margin = float(row["Expected margin"])
+            loss_probability = float(row["Loss probability"])
+            if expected_margin >= 0 and loss_probability < 0.20:
+                interpretation = "Positive expected margin with relatively lower modeled loss frequency."
+            elif expected_margin >= 0:
+                interpretation = "Positive expected margin, but downside risk remains material."
+            else:
+                interpretation = "Negative expected margin under the modeled assumptions."
+            strategy_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row['Strategy']))}</td>"
+                f"<td>${float(row['Expected net price']):.2f}</td>"
+                f"<td>${float(row['P10 margin']):,.0f}</td>"
+                f"<td>${float(row['P50 margin']):,.0f}</td>"
+                f"<td>{loss_probability:.1%}</td>"
+                f"<td>{html.escape(interpretation)}</td>"
+                "</tr>"
+            )
+        hedging_html = f"""
+<section class="module">
+<h2>Hedging and marketing implications</h2>
+<p class="module-lead">The report translates the forecast into break-even and strategy trade-offs using the validated Decision Lab simulation functions.</p>
+<div class="module-grid"><div class="module-card"><span>Current net cash</span><strong>${hedging['current_net_cash']:.2f}/bu</strong></div><div class="module-card"><span>Break-even cash</span><strong>${hedging['break_even_cash']:.2f}/bu</strong></div><div class="module-card"><span>Margin cushion</span><strong>${hedging['cushion']:.2f}/bu</strong><em>{margin_status}</em></div></div>
+<div class="module-callout"><strong>Interpretation.</strong> Current net cash is ${hedging['cushion']:.2f}/bu above break-even under the report assumptions. That is a pricing opportunity to evaluate—not an instruction to price 100%. Compare unhedged, staged, futures, and put protection while keeping basis, yield, storage, and execution risk visible.</div>
+<table class="module-table"><thead><tr><th>Strategy</th><th>Expected net price</th><th>P10 margin/acre</th><th>P50 margin/acre</th><th>Loss probability</th><th>Interpretation</th></tr></thead><tbody>{''.join(strategy_rows)}</tbody></table>
+<p class="module-note">{html.escape(hedging['assumption_note'])} The example is educational and should be replaced with the selected producer's cost, yield, basis, contract, and protection inputs before any actual decision.</p>
+</section>
+"""
+    else:
+        hedging_html = f"""
+<section class="module">
+<h2>Hedging and marketing implications</h2>
+<div class="module-callout"><strong>Data status.</strong> {html.escape(str(hedging['reason']))} Open the Hedging &amp; Marketing Implications page to enter enterprise-specific costs and compare strategies.</div>
+</section>
+"""
+
+    return response_html + forecast_html + hedging_html
+
+
 def branded_report_html(case: ReleaseCase) -> str:
     """Return a standalone Fryar-branded HTML report preview/download."""
 
     logo = _logo_data_uri()
     report = html.escape(generated_report(case))
+    integrated_sections = _integrated_report_sections(case)
     logo_html = (
         f'<img class="logo" src="{logo}" alt="Fryar Price Risk Management Center of Excellence">'
         if logo
@@ -443,6 +700,22 @@ h2:first-child {{ margin-top:0; }}
 h3 {{ font-size:15px; margin:16px 0 6px; }}
 .callout {{ border-left:5px solid var(--red); background:#fbf3f5; padding:16px 18px; margin:12px 0 20px; }}
 .callout strong {{ color:var(--red); }}
+.module {{ border-top:5px solid var(--blue); background:#fff; padding:20px 0 6px; margin:28px 0 8px; }}
+.module h2 {{ margin-top:0; }}
+.module-lead {{ color:var(--slate); font-size:13px; margin-top:0; }}
+.module-grid {{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:14px 0 16px; }}
+.module-card {{ border:1px solid var(--line); border-top:4px solid var(--blue); padding:12px 14px; background:#fafdff; }}
+.module-card span {{ display:block; color:var(--slate); font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }}
+.module-card strong {{ display:block; font-size:22px; margin-top:5px; }}
+.module-card em {{ display:block; color:var(--red); font-size:11px; margin-top:4px; font-style:normal; }}
+.module-table {{ border-collapse:collapse; width:100%; font-size:11px; margin:12px 0 16px; }}
+.module-table th {{ background:#2f6690; color:#fff; font-weight:600; text-align:left; padding:8px 9px; }}
+.module-table td {{ border-bottom:1px solid var(--line); padding:8px 9px; vertical-align:top; }}
+.module-table tr:nth-child(even) td {{ background:#fafdff; }}
+.module-callout {{ border-left:4px solid var(--blue); background:#eef5fb; padding:12px 15px; margin:12px 0 16px; font-size:12px; }}
+.module-callout strong {{ color:#2f6690; }}
+.module-note {{ color:var(--slate); font-size:11px; }}
+.module-note a {{ color:var(--red); }}
 .comparison {{ border-collapse:collapse; width:100%; font-size:12px; margin:12px 0 18px; }}
 .comparison th {{ background:var(--red); color:#fff; font-weight:600; text-align:left; padding:9px 10px; }}
 .comparison td {{ border-bottom:1px solid var(--line); padding:9px 10px; }}
@@ -457,7 +730,7 @@ h3 {{ font-size:15px; margin:16px 0 6px; }}
 .footer {{ background:#27343b; color:#e9eef0; padding:18px 46px; display:flex; justify-content:space-between; gap:24px; font-size:11px; }}
 .footer strong {{ color:#fff; }}
 .disclaimer {{ color:#cbd5da; max-width:60%; text-align:right; }}
-@media(max-width:720px) {{ .header,.hero,.content,.footer {{ padding-left:22px; padding-right:22px; }} .stats {{ padding-left:22px; padding-right:22px; grid-template-columns:repeat(2,1fr); }} .header,.footer {{ display:block; }} .series {{ text-align:left; margin-top:14px; }} .two-col {{ display:block; }} .disclaimer {{ max-width:100%; text-align:left; margin-top:10px; }} h1 {{ font-size:28px; }} .logo {{ width:260px; }} }}
+@media(max-width:720px) {{ .header,.hero,.content,.footer {{ padding-left:22px; padding-right:22px; }} .stats {{ padding-left:22px; padding-right:22px; grid-template-columns:repeat(2,1fr); }} .header,.footer {{ display:block; }} .series {{ text-align:left; margin-top:14px; }} .two-col,.module-grid {{ display:block; }} .module-card {{ margin-bottom:10px; }} .disclaimer {{ max-width:100%; text-align:left; margin-top:10px; }} h1 {{ font-size:28px; }} .logo {{ width:260px; }} }}
 </style>
 </head>
 <body>
@@ -469,6 +742,7 @@ h3 {{ font-size:15px; margin:16px 0 6px; }}
 <h2>What changed</h2>
 {_html_table(case)}
 <div class="callout"><strong>Producer decision cue.</strong> {html.escape(watch_text)}</div>
+{integrated_sections}
 <div class="two-col"><div><h2>How to read this release</h2><p>{html.escape(case.note)}</p></div><div><h2>Method and data</h2><div class="method">This brief compares the two official USDA releases and computes changes directly from the reported quantities. It is an educational Extension product, not a price guarantee, trade recommendation, or individualized marketing advice.</div></div></div>
 <h2>Official sources</h2><ul class="sources">{sources}</ul>
 </section>
