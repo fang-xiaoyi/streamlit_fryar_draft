@@ -24,13 +24,14 @@ compares LRP, put-option, cash-sale, futures, and staged-hedge scenarios. Crop
 workflows do not show LRP; they show crop-appropriate futures, staged-hedge, and
 put-option tools.
 
-The draft now includes five demonstrable tools in one Streamlit toolbox:
+The draft now includes six demonstrable tools in one Streamlit toolbox:
 
 1. **Fryar Producer Decision Lab** — the producer-first hedging and marketing tool in `app.py`.
 2. **Fryar USDA Release & Decision Report** — the real-data Corn and Cattle release comparison, formula layer, blank report template, auto-filled report, source check, and download workflow in `pages/2_USDA_Market_Outlook.py`.
 3. **Fryar Decision Bridge & Feedback Lab** — the role-specific margin bridge and anonymous workshop feedback page in `pages/3_Decision_Bridge.py`.
 4. **Fryar Supply & Demand Analysis** — the transparent USDA balance-sheet calculation layer in `pages/4_Supply_Demand_Analysis.py`.
 5. **Fryar Market Price Response** — the USDA event-study layer in `pages/5_Market_Price_Response.py`, with nearby futures movement, deferred-minus-nearby calendar spread, and plain-language interpretation.
+6. **Fryar Commodity Price Forecasts** — the low/middle/high scenario layer in `pages/6_Commodity_Price_Forecast.py`, with transparent stocks-to-use sensitivity, volatility band, and USDA Agricultural Baseline/FAPRI-MU/OECD-FAO benchmark comparison.
 
 The third page still uses transparent manual inputs. The USDA pages contain two official snapshot cases: October 2026 versus September 2026 Corn WASDE and October 2026 versus September 2026 Cattle on Feed. November 2026 had not yet been released when the case was built, so the app flags the scheduled release rather than inventing data. The intended production architecture is to have one validated release snapshot feed the monthly report, the market-price event study, and the hedging/marketing tool.
 
@@ -44,6 +45,10 @@ The third page still uses transparent manual inputs. The USDA pages contain two 
 The page shows a stable extension-style template with blank tokens, fills the template using the real USDA snapshot, and lets the user download both a Markdown report and a normalized CSV. A future scheduled job can replace the snapshot dictionary with a parser for the official USDA WASDE XLS/XML/TXT and NASS Cattle on Feed files, validate the release date and units, and publish the same report without changing the UI.
 
 The report preview/download now uses the local `Fryar-Center-logo.png`, the Center's cardinal-red visual accent (`#9E2B44`), Poppins-style typography, a branded header, “At a glance” metric cards, a red conclusion callout, a comparison table, methods/data note, official-source list, and University of Arkansas Division of Agriculture footer. The HTML download is self-contained: the logo is embedded so it does not depend on a local path after download.
+
+### Commodity price forecast case
+
+The price forecast page uses the current validated Corn WASDE farm-price projection as the anchor, adjusts the middle scenario with an explicit stocks-to-use sensitivity, and widens low/high scenarios with an annualized implied-volatility input. The current benchmark file in `data/benchmarks/corn_price_benchmarks.csv` shows USDA Agricultural Baseline, FAPRI-MU, and OECD-FAO reference values with their source, horizon, unit, and comparability status. OECD-FAO is kept as global maize context rather than blended into the U.S. farm-price band. The current volatility input is manual until an entitled options feed is connected; the page flags the provisional FAPRI seed and keeps the formulas visible for review.
 
 ## Live audience interaction for the stakeholder presentation
 

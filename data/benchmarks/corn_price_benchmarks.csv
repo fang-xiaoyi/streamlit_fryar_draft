@@ -1,0 +1,5 @@
+source,benchmark_type,horizon,price_value,unit,comparable_to_us_farm_price,source_url,source_note,data_status
+USDA WASDE,Monthly USDA market estimate,2026/27,4.70,USD/bu,yes,https://www.usda.gov/oce/commodity/wasde/wasde1026.pdf,October 2026 WASDE season-average farm-price projection,validated_case
+USDA Agricultural Baseline,US 10-year baseline,2026/27,4.10,USD/bu,yes,https://www.ers.usda.gov/data-products/agricultural-baseline-database,USDA baseline projection; a no-major-shock long-run scenario,official_reference
+FAPRI-MU,US 10-year baseline,2026/27,4.57,USD/bu,yes,https://agmanager.info/sites/default/files/newsletters/RVL_Prices_Sept-26.pdf,Provisional seed from the October 1 2026 published comparison table quoting FAPRI-MU; replace with the latest FAPRI workbook in the recurring pipeline,provisional_seed
+OECD-FAO,Global maize reference,2035,236,USD/t,no,https://www.oecd.org/en/publications/oecd-fao-agricultural-outlook-2026-2035_47874669-en/full-report/cereals_c41b0eaa.html,Global reference export price; converted to USD/bu for context only and not blended into the US farm-price band,official_reference
