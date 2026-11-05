@@ -33,6 +33,7 @@ The draft now includes seven demonstrable tools in one Streamlit toolbox:
 5. **Fryar Market Price Response** — the USDA event-study layer in `pages/5_Market_Price_Response.py`, with nearby futures movement, deferred-minus-nearby calendar spread, and plain-language interpretation.
 6. **Fryar Commodity Price Forecasts** — the low/middle/high scenario layer in `pages/6_Commodity_Price_Forecast.py`, with transparent stocks-to-use sensitivity, volatility band, and USDA Agricultural Baseline/FAPRI-MU/OECD-FAO benchmark comparison.
 7. **Fryar Hedging & Marketing Implications** — the producer-facing bridge in `pages/7_Hedging_Marketing_Implications.py`, with editable cost breakdown, Arkansas/regional/USDA/own-history benchmark comparison, break-even interpretation, and validated strategy simulation.
+8. **Fryar Monthly USDA Report Studio** — the publication layer in `pages/8_Monthly_Report_Studio.py`, with a fixed monthly content map, branded Fact Sheet and Full Report previews, Markdown editorial draft, review gate, and downloadable report package.
 
 The third page still uses transparent manual inputs. The USDA pages contain two official snapshot cases: October 2026 versus September 2026 Corn WASDE and October 2026 versus September 2026 Cattle on Feed. November 2026 had not yet been released when the case was built, so the app flags the scheduled release rather than inventing data. The intended production architecture is to have one validated release snapshot feed the monthly report, the market-price event study, and the hedging/marketing tool.
 
@@ -52,6 +53,12 @@ The report preview/download now uses the local `Fryar-Center-logo.png`, the Cent
 The price forecast page uses the current validated Corn WASDE farm-price projection as the anchor, adjusts the middle scenario with an explicit stocks-to-use sensitivity, and widens low/high scenarios with an annualized implied-volatility input. The current benchmark file in `data/benchmarks/corn_price_benchmarks.csv` shows USDA Agricultural Baseline, FAPRI-MU, and OECD-FAO reference values with their source, horizon, unit, and comparability status. OECD-FAO is kept as global maize context rather than blended into the U.S. farm-price band. The current volatility input is manual until an entitled options feed is connected; the page flags the provisional FAPRI seed and keeps the formulas visible for review.
 
 The hedging/marketing page adds the next JD layer: it breaks total cost into item-level categories, lets the audience enter matching Arkansas/regional, USDA national, and own-prior-year values, calculates current and benchmark break-even prices, and reuses `simulate_strategies`/`summarize` from the Decision Lab for cash sale, wait, futures, staged hedge, put, and livestock LRP comparisons. Each cost and strategy result includes an interpretation rather than only a number.
+
+### Monthly Report Studio
+
+`pages/8_Monthly_Report_Studio.py` is the operator-facing publication layer for the second JD initiative. It reads the same validated monthly release pair as the USDA report page and assembles a repeatable package containing a Fryar-branded Fact Sheet, Full Extension Report, Markdown editorial draft, normalized comparison CSV, and human-review checklist. The browser session does not overwrite history; the scheduled refresh job remains responsible for writing immutable snapshots and archived report bundles under `data/`.
+
+The content map makes the future full report explicit: executive interpretation, supply and demand, market price response, commodity price forecast, hedging and marketing implications, and sources/methods. The current seeded release can be previewed and downloaded now; licensed market-price data and forecast outputs are labeled as inputs to connect next rather than silently invented.
 
 ## Live audience interaction for the stakeholder presentation
 
@@ -159,3 +166,4 @@ streamlit run app.py
 6. Add live data credentials only after the Center confirms access, licensing, allowed redistribution, and update ownership.
 7. Move raw PDFs to object storage if repository size becomes a constraint; keep normalized snapshots and reports versioned.
 8. Add the poultry feed-cost view after the row-crop workflow is validated, using an explicit ration, feed-conversion ratio, procurement horizon, and broiler output-price assumption.
+9. Connect the market-price response and commodity-forecast outputs to the Report Studio sections, then move the same package builder into the scheduled USDA refresh workflow for automatic monthly publication after human review.
