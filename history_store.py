@@ -72,6 +72,42 @@ def list_snapshots(
     )
 
 
+def _release_period(record: dict[str, Any]) -> str:
+    """Return the YYYY-MM vintage period used for release comparisons."""
+
+    release_date = str(record.get("release_date", ""))
+    return release_date[:7]
+
+
+def _monthly_vintages(commodity: str) -> list[dict[str, Any]]:
+    """Collapse same-month duplicates/revisions to one reportable vintage.
+
+    Raw revisions remain in ``data/normalized`` and the manifest.  The app,
+    however, should compare one monthly release with the prior month rather
+    than comparing a release with another copy/revision from the same month.
+    The newest snapshot ID within a month is the representative record.
+    """
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in list_snapshots(commodity):
+        period = _release_period(record)
+        if not period:
+            continue
+        current = grouped.get(period)
+        if current is None or (
+            str(record.get("release_date", "")),
+            str(record.get("snapshot_id", "")),
+        ) > (
+            str(current.get("release_date", "")),
+            str(current.get("snapshot_id", "")),
+        ):
+            grouped[period] = record
+    return sorted(
+        grouped.values(),
+        key=lambda item: (str(item.get("release_date", "")), str(item.get("snapshot_id", ""))),
+    )
+
+
 def get_snapshot(commodity: str, snapshot_id: str) -> dict[str, Any]:
     for record in list_snapshots(commodity, include_failed=True):
         if record.get("snapshot_id") == snapshot_id:
@@ -89,7 +125,7 @@ def latest_snapshot(commodity: str) -> dict[str, Any] | None:
             return get_snapshot(commodity, str(snapshot_id))
         except KeyError:
             pass
-    records = list_snapshots(commodity)
+    records = _monthly_vintages(commodity)
     return records[-1] if records else None
 
 
@@ -101,18 +137,13 @@ def previous_snapshot(commodity: str, snapshot_id: str) -> dict[str, Any] | None
     )
     if selected is None:
         return None
-    # A corrected file for the same release date is a new revision, not the
-    # previous economic vintage. Compare it with the latest strictly older
-    # release date so revision history does not distort the report.
-    older = [
-        record
-        for record in records
-        if str(record.get("release_date", "")) < str(selected.get("release_date", ""))
-    ]
-    if older:
-        return older[-1]
-    selected_index = records.index(selected)
-    return records[selected_index - 1] if selected_index else None
+    # A corrected file or a second source record from the same month is not a
+    # previous economic vintage. Compare with the latest representative from
+    # the strictly older YYYY-MM release period.
+    vintages = _monthly_vintages(commodity)
+    selected_period = _release_period(selected)
+    older = [record for record in vintages if _release_period(record) < selected_period]
+    return older[-1] if older else None
 
 
 def _source_tuple(record: dict[str, Any]) -> tuple[str, str]:
@@ -162,7 +193,7 @@ def build_case(commodity: str, snapshot_id: str) -> ReleaseCase:
 def case_records(commodity: str) -> list[dict[str, Any]]:
     """Return snapshots that have a prior vintage and can produce a report."""
 
-    records = list_snapshots(commodity)
+    records = _monthly_vintages(commodity)
     if len(records) < 2:
         return []
     return records[1:]
@@ -175,4 +206,3 @@ def format_snapshot_option(record: dict[str, Any], latest_id: str | None) -> str
     revision = record.get("revision")
     suffix = f" · revision {revision}" if revision else ""
     return f"{marker} — {label} ({release_date}){suffix}"
-
