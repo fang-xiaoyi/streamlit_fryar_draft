@@ -102,7 +102,15 @@ def _download(url: str, destination: Path, session: requests.Session) -> bytes |
     response.raise_for_status()
     content_type = response.headers.get("content-type", "").lower()
     if "pdf" not in content_type and not response.content.startswith(b"%PDF"):
-        raise RuntimeError(f"Expected a PDF from {url}; received {content_type or 'unknown content type'}.")
+        # USDA sometimes returns an HTML landing/404 page with HTTP 200 before
+        # the monthly file is published.  Treat that as an unavailable
+        # candidate so the scheduler can continue checking other months or
+        # the cattle fallback source instead of failing the whole job.
+        print(
+            f"Source not yet published: {url} "
+            f"({content_type or 'unknown content type'})."
+        )
+        return None
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(response.content)
     return response.content
@@ -430,30 +438,31 @@ def refresh_commodity(commodity: str, *, dry_run: bool = False, months_back: int
                 continue
             if content is None:
                 continue
-            found += 1
-            text = _pdf_text(staging_path)
-            release_date = _release_date_from_text(text, candidate_date)
-            if commodity == "corn":
-                data = parse_corn_wasde(text, release_date, url)
-                label = f"{release_date.strftime('%B %Y')} WASDE"
-            else:
-                data = parse_cattle_on_feed(text, release_date, url)
-                label = f"{release_date.strftime('%B %Y')} Cattle on Feed"
-            record = _store_snapshot(
-                commodity,
-                data,
-                content,
-                url,
-                label,
-                release_date,
-                dry_run=dry_run,
-            )
-            print(f"Validated {commodity} {release_date.isoformat()} as {record['snapshot_id']}")
-            # Staging files are never part of the history layer.  Remove them
-            # after a successful parse even during --dry-run so repeated tests
-            # do not accumulate temporary PDFs.
-            staging_path.unlink(missing_ok=True)
-            break
+            try:
+                found += 1
+                text = _pdf_text(staging_path)
+                release_date = _release_date_from_text(text, candidate_date)
+                if commodity == "corn":
+                    data = parse_corn_wasde(text, release_date, url)
+                    label = f"{release_date.strftime('%B %Y')} WASDE"
+                else:
+                    data = parse_cattle_on_feed(text, release_date, url)
+                    label = f"{release_date.strftime('%B %Y')} Cattle on Feed"
+                record = _store_snapshot(
+                    commodity,
+                    data,
+                    content,
+                    url,
+                    label,
+                    release_date,
+                    dry_run=dry_run,
+                )
+                print(f"Validated {commodity} {release_date.isoformat()} as {record['snapshot_id']}")
+                break
+            finally:
+                # Staging files are never part of the history layer.  Remove
+                # them after every parse attempt, including a failed parser.
+                staging_path.unlink(missing_ok=True)
     return found
 
 
