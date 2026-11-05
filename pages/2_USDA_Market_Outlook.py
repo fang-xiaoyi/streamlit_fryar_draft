@@ -6,12 +6,15 @@ from datetime import date
 
 import plotly.graph_objects as go
 import streamlit as st
+import streamlit.components.v1 as components
 
 from usda_report_pipeline import (
     CASES,
     TEMPLATE_SHELLS,
+    branded_fact_sheet_html,
     check_source,
     comparison_frame,
+    branded_report_html,
     generated_report,
     get_case,
     metrics_for,
@@ -152,8 +155,21 @@ with template_col:
         "while direction and magnitude are generated from the data rather than hand-written."
     )
 with report_col:
-    st.markdown("#### Auto-generated extension-style report")
-    st.info(generated_report(case))
+    st.markdown("#### Branded Fryar Center outputs")
+    fact_tab, report_tab = st.tabs(["Fryar Fact Sheet", "Full Extension Report"])
+    fact_html = branded_fact_sheet_html(case)
+    branded_html = branded_report_html(case)
+    with fact_tab:
+        components.html(fact_html, height=940, scrolling=True)
+        st.download_button(
+            "Download Fryar fact sheet (.html)",
+            data=fact_html.encode("utf-8"),
+            file_name=f"{case.key}_fryar_fact_sheet.html",
+            mime="text/html",
+            key=f"download_fact_sheet_{case.key}",
+        )
+    with report_tab:
+        components.html(branded_html, height=1160, scrolling=True)
     report_markdown = (
         f"# {case.commodity} USDA release report\n\n"
         f"**Current release:** {case.current_label}  \n"
@@ -168,6 +184,13 @@ with report_col:
         data=report_markdown.encode("utf-8"),
         file_name=f"{case.key}_usda_release_report.md",
         mime="text/markdown",
+    )
+    st.download_button(
+        "Download branded report (.html)",
+        data=branded_html.encode("utf-8"),
+        file_name=f"{case.key}_fryar_branded_report.html",
+        mime="text/html",
+        key=f"download_branded_report_{case.key}",
     )
 
 
