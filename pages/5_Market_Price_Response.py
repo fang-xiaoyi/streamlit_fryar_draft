@@ -1,8 +1,8 @@
 """Market-price response page for USDA release event studies.
 
 The page is intentionally separate from the balance-sheet analysis.  It links
-the USDA release date to observed futures settlements, then interprets both
-the outright nearby move and the deferred-minus-nearby calendar spread.
+the USDA release date to observed futures prices, then interprets both the
+outright nearby move and the deferred-minus-nearby calendar spread.
 """
 
 from __future__ import annotations
@@ -317,7 +317,7 @@ def _format_frame(frame: pd.DataFrame) -> pd.DataFrame:
 def _interpretation(event: pd.DataFrame, case) -> list[str]:
     if event.empty or len(event) < 2:
         return [
-            "Enter or load at least the pre-release and release-day settlements before interpreting the response."
+            "Enter or load at least the pre-release and release-day prices before interpreting the response."
         ]
     pre = event.iloc[0]
     release = event.iloc[1]
@@ -335,10 +335,10 @@ def _interpretation(event: pd.DataFrame, case) -> list[str]:
     lines: list[str] = []
     if nearby_change is None:
         lines.append(
-            "The page has not received both nearby settlements, so it cannot describe an outright futures response yet."
+            "The page has not received both nearby prices, so it cannot describe an outright futures response yet."
         )
     elif abs(nearby_change) < 0.005:
-        lines.append("The nearby contract was essentially unchanged at the release-day settlement relative to the pre-release close.")
+        lines.append("The nearby contract was essentially unchanged at the release-day observation relative to the pre-release price.")
     elif nearby_change < 0:
         lines.append(
             f"The nearby contract fell {_price_text(abs(nearby_change))}/bu on the release-day comparison. This is the immediate market response, not a stand-alone forecast."
@@ -368,7 +368,7 @@ def _interpretation(event: pd.DataFrame, case) -> list[str]:
 
     if spread_change is None:
         lines.append(
-            "Calendar-spread interpretation is unavailable until both nearby and deferred contract settlements are loaded from the same source and timestamp convention."
+            "Calendar-spread interpretation is unavailable until both nearby and deferred contract prices are loaded from the same source and timestamp convention."
         )
     elif spread_change > 0.005:
         lines.append(
@@ -404,7 +404,7 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="callout"><strong>What this page answers:</strong> After a USDA release, did the nearby futures settlement move, did the deferred-minus-nearby spread change, and what does that pattern mean for the market story? The page keeps the event study separate from the supply-and-demand calculations and from the producer hedging decision tool.</div>',
+    '<div class="callout"><strong>What this page answers:</strong> After a USDA release, did the nearby futures price move, did the deferred-minus-nearby spread change, and what does that pattern mean for the market story? The page keeps the event study separate from the supply-and-demand calculations and from the producer hedging decision tool.</div>',
     unsafe_allow_html=True,
 )
 
@@ -556,7 +556,7 @@ big_cols[2].metric(
 big_cols[3].metric(
     "Data source",
     "Contract-level" if event["Deferred price ($/bu)"].notna().any() else ("Manual input" if data_mode == "Enter observed settlements" else "Continuous nearby"),
-    "observed settlement window",
+    "observed event-window prices",
 )
 
 st.caption(
@@ -595,7 +595,7 @@ if event["Deferred price ($/bu)"].notna().any():
         )
     )
 price_fig.update_layout(
-    title="Observed futures settlements around the USDA release",
+    title="Observed futures prices around the USDA release",
     yaxis_title="Dollars per bushel",
     height=360,
     template="plotly_white",
@@ -646,7 +646,7 @@ st.markdown(
 with st.expander("What each number represents"):
     st.markdown(
         """
-        **Nearby price move** is the settlement difference between the release-day observation and the last available settlement before the release. It answers: *what did the market do immediately?*
+        **Nearby price move** is the price difference between the release-day observation and the last available price before the release. It answers: *what did the market do immediately?*
 
         **Calendar spread** is `deferred price − nearby price`. A larger positive spread means deferred strengthened relative to nearby; a smaller or more negative spread means nearby strengthened relative to deferred. It answers: *did the market change its view of immediate availability versus later supply?*
 
@@ -660,8 +660,8 @@ st.subheader("5. Data and pipeline status")
 pipeline_frame = pd.DataFrame(
     [
         ["USDA release event", "release date, report label, prior/current vintage", "Validated snapshot", "Connected"],
-        ["Nearby settlement", "contract/date/settlement/source/timestamp", "Barchart if key; otherwise public continuous reference", "Connected with fallback"],
-        ["Deferred settlement", "same fields, same price convention", "Barchart/CME contract-level entitlement", "Required for automatic spread"],
+        ["Nearby futures price", "contract/date/price or settlement/source/timestamp", "Barchart if key; otherwise public continuous reference", "Connected with fallback"],
+        ["Deferred futures price", "same fields, same price convention", "Barchart/CME contract-level entitlement", "Required for automatic spread"],
         ["Calendar spread", "deferred − nearby using same event dates", "Calculated in page", "Connected when both legs exist"],
         ["Audit trail", "source URL, retrieval timestamp, symbol, parser version", "Stored with page output; scheduled job can persist rows", "Prototype"],
     ],
@@ -669,7 +669,7 @@ pipeline_frame = pd.DataFrame(
 )
 st.dataframe(pipeline_frame, width="stretch", hide_index=True)
 st.markdown(
-    '<div class="warning-callout"><strong>Licensing boundary:</strong> The public continuous series is a reference fallback. For a published Fryar report, use a data source whose license permits historical settlement display and redistribution. Barchart/CME credentials belong in Streamlit secrets or a scheduled backend, never in the page code or user-facing inputs.</div>',
+    '<div class="warning-callout"><strong>Licensing boundary:</strong> The public continuous series is a reference fallback. For a published Fryar report, use a data source whose license permits historical futures-price display and redistribution. Barchart/CME credentials belong in Streamlit secrets or a scheduled backend, never in the page code or user-facing inputs.</div>',
     unsafe_allow_html=True,
 )
 
@@ -686,5 +686,5 @@ st.download_button(
 )
 
 st.caption(
-    "This page is an educational event-study prototype. Before public publication, validate contract symbols, settlement timing, data licensing, and the interpretation with the Fryar Center market analyst."
+    "This page is an educational event-study prototype. Before public publication, validate contract symbols, price timing, data licensing, and the interpretation with the Fryar Center market analyst."
 )
