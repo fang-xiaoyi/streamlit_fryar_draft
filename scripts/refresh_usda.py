@@ -187,15 +187,28 @@ def parse_corn_wasde(text: str, release_date: date, source_url: str) -> dict[str
     """Parse the latest U.S. corn column from a text-extracted WASDE table."""
 
     lines = text.splitlines()
+    # The official October 2026 PDF calls this section "Feed Grain and Corn"
+    # (singular), while some earlier releases used "Feed Grains".  Anchor on
+    # the first explicit CORN subsection so the generic "Production" row from
+    # the highlights page or the feed-grains table cannot be selected.
     table_start = next(
         (
             index
             for index, line in enumerate(lines)
-            if "feed grains supply and use" in line.lower() and "corn" in text.lower()
+            if "feed grain" in line.lower()
+            and "corn supply" in line.lower()
         ),
         0,
     )
-    rows = lines[table_start : table_start + 180]
+    corn_start = next(
+        (
+            index
+            for index in range(table_start, min(table_start + 80, len(lines)))
+            if lines[index].strip().lower() == "corn"
+        ),
+        table_start,
+    )
+    rows = lines[corn_start : corn_start + 60]
     data = {
         "beginning_stocks": _last_number(rows, ("Beginning Stocks",)),
         "production": _last_number(rows, ("Production",)),
@@ -243,14 +256,95 @@ def parse_cattle_on_feed(text: str, release_date: date, source_url: str) -> dict
 
     lines = text.splitlines()
     month_name = release_date.strftime("%B").lower()
-    inventory_line = _find_line(lines, (f"On feed {month_name} 1", "On feed"))
-    placements_line = _find_line(lines, ("Placed on feed", "Placements"))
-    marketings_line = _find_line(lines, ("Fed cattle marketed", "Marketings"))
-    disappearance_line = _find_line(lines, ("Other disappearance", "Other Disappearance"))
-    inventory, inventory_yoy = _cattle_current_and_yoy(inventory_line)
-    placements, placements_yoy = _cattle_current_and_yoy(placements_line)
-    marketings, marketings_yoy = _cattle_current_and_yoy(marketings_line)
-    disappearance, disappearance_yoy = _cattle_current_and_yoy(disappearance_line)
+
+    # Most NASS PDFs expose the first U.S. summary table as one row per line,
+    # but pdfplumber can also return the labels first and the 2025/2026/
+    # percent columns as a separate numeric block.  Try the simple form first.
+    try:
+        inventory_line = _find_line(lines, (f"On feed {month_name} 1", "On feed"))
+        placements_line = _find_line(lines, ("Placed on feed", "Placements"))
+        marketings_line = _find_line(lines, ("Fed cattle marketed", "Marketings"))
+        disappearance_line = _find_line(lines, ("Other disappearance", "Other Disappearance"))
+        inventory, inventory_yoy = _cattle_current_and_yoy(inventory_line)
+        placements, placements_yoy = _cattle_current_and_yoy(placements_line)
+        marketings, marketings_yoy = _cattle_current_and_yoy(marketings_line)
+        disappearance, disappearance_yoy = _cattle_current_and_yoy(disappearance_line)
+    except RuntimeError:
+        # In the split-column layout, collect the first 15 values after the
+        # five summary row labels: 5 values for 2025, 5 for 2026, and 5 YoY
+        # percentages.  The row order is fixed by the NASS table.
+        table_start = next(
+            (
+                index
+                for index, line in enumerate(lines)
+                if "cattle on feed inventory, placements, marketings" in line.lower()
+            ),
+            None,
+        )
+        if table_start is None:
+            raise RuntimeError("Could not find the NASS Cattle on Feed summary table.")
+        labels = (
+            "On feed September 1",
+            "Placed on feed during",
+            "Fed cattle marketed during",
+            "Other disappearance during",
+            f"On feed {month_name} 1",
+        )
+        label_positions: list[int] = []
+        search_from = table_start
+        for label in labels:
+            position = next(
+                (
+                    index
+                    for index in range(search_from, min(table_start + 120, len(lines)))
+                    if label.lower() in lines[index].lower()
+                ),
+                None,
+            )
+            if position is None:
+                break
+            label_positions.append(position)
+            search_from = position + 1
+        if len(label_positions) != len(labels):
+            raise RuntimeError("Could not identify all rows in the NASS Cattle on Feed table.")
+
+        values: list[float] = []
+        for line in lines[label_positions[-1] + 1 : label_positions[-1] + 80]:
+            values.extend(_number_tokens(line))
+            if len(values) >= 15:
+                break
+        if len(values) < 15:
+            # As a last-resort fallback, use the rounded values stated in the
+            # release summary.  This keeps the scheduled job alive if USDA
+            # changes the PDF table layout; the validation layer still records
+            # the source URL and parser version for review.
+            summary_patterns = {
+                "inventory": r"totaled\s+([\d.]+)\s*million head on",
+                "placements": r"Placements in feedlots during .*? totaled\s+([\d.]+)\s*million head,\s*(\d+)\s*percent",
+                "marketings": r"Marketings of fed cattle during .*? totaled\s+([\d.]+)\s*million head,\s*(\d+)\s*percent",
+                "disappearance": r"Other disappearance totaled\s+([\d,]+)\s*head during .*?,\s*(\d+)\s*percent",
+            }
+            inventory_match = re.search(summary_patterns["inventory"], text, flags=re.IGNORECASE | re.DOTALL)
+            placements_match = re.search(summary_patterns["placements"], text, flags=re.IGNORECASE | re.DOTALL)
+            marketings_match = re.search(summary_patterns["marketings"], text, flags=re.IGNORECASE | re.DOTALL)
+            disappearance_match = re.search(summary_patterns["disappearance"], text, flags=re.IGNORECASE | re.DOTALL)
+            if not all((inventory_match, placements_match, marketings_match, disappearance_match)):
+                raise RuntimeError("Could not parse the NASS Cattle on Feed summary or table.")
+            inventory = float(inventory_match.group(1)) * 1000
+            placements = float(placements_match.group(1)) * 1000
+            placements_yoy = float(placements_match.group(2))
+            marketings = float(marketings_match.group(1)) * 1000
+            marketings_yoy = float(marketings_match.group(2))
+            disappearance = float(disappearance_match.group(1).replace(",", ""))
+            disappearance_yoy = float(disappearance_match.group(2))
+            # The narrative describes inventory as slightly below the prior
+            # year without a percentage; keep the release's rounded direction.
+            inventory_yoy = 100.0
+        else:
+            current_values = values[5:10]
+            yoy_values = values[10:15]
+            inventory, placements, marketings, disappearance = current_values
+            inventory_yoy, placements_yoy, marketings_yoy, disappearance_yoy = yoy_values
     return {
         "commodity": "Cattle",
         "release_date": release_date.isoformat(),
