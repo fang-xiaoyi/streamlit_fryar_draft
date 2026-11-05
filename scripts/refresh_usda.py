@@ -196,15 +196,15 @@ def parse_corn_wasde(text: str, release_date: date, source_url: str) -> dict[str
     # (singular), while some earlier releases used "Feed Grains".  Anchor on
     # the first explicit CORN subsection so the generic "Production" row from
     # the highlights page or the feed-grains table cannot be selected.
-    table_start = next(
-        (
-            index
-            for index, line in enumerate(lines)
-            if "feed grain" in line.lower()
-            and "corn supply" in line.lower()
-        ),
-        0,
-    )
+    # The same title appears in the table of contents before the actual
+    # table.  Use the last matching occurrence so the parser cannot anchor
+    # itself on the TOC and miss the Corn subsection entirely.
+    table_matches = [
+        index
+        for index, line in enumerate(lines)
+        if "feed grain" in line.lower() and "corn supply" in line.lower()
+    ]
+    table_start = table_matches[-1] if table_matches else 0
     corn_start = next(
         (
             index
