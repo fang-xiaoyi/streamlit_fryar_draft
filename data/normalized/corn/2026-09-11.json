@@ -1,0 +1,24 @@
+{
+  "commodity": "corn",
+  "data": {
+    "beginning_stocks": 1922,
+    "ending_stocks": 1567,
+    "ethanol": 5600,
+    "exports": 3275,
+    "farm_price": 4.8,
+    "feed_residual": 5950,
+    "production": 15800,
+    "total_use": 16180,
+    "yield": 178.5
+  },
+  "note": "Initial historical baseline from the validated September 2026 WASDE case.",
+  "parser_version": "seed-2026.11",
+  "raw_sha256": "seeded-case-no-raw-file",
+  "release_date": "2026-09-11",
+  "release_label": "September 2026 WASDE",
+  "schema_version": 1,
+  "snapshot_id": "2026-09-11",
+  "source_label": "September 2026 WASDE",
+  "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde0926.pdf",
+  "validation_status": "passed"
+}
