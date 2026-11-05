@@ -163,9 +163,11 @@ def _number_tokens(value: str) -> list[float]:
 
 
 def _find_line(lines: list[str], labels: tuple[str, ...], start: int = 0) -> str:
-    lowered = [line.lower() for line in lines]
+    # PDF text extraction may split a visual row such as "Beginning Stocks"
+    # across a newline or insert repeated spaces between columns.
+    lowered = [" ".join(line.lower().split()) for line in lines]
     for label in labels:
-        needle = label.lower()
+        needle = " ".join(label.lower().split())
         for index in range(start, len(lines)):
             if needle in lowered[index]:
                 return lines[index]
@@ -204,7 +206,7 @@ def parse_corn_wasde(text: str, release_date: date, source_url: str) -> dict[str
         (
             index
             for index in range(table_start, min(table_start + 80, len(lines)))
-            if lines[index].strip().lower() == "corn"
+            if " ".join(lines[index].lower().split()) in {"corn", "corn 2024/25"}
         ),
         table_start,
     )
@@ -219,7 +221,10 @@ def parse_corn_wasde(text: str, release_date: date, source_url: str) -> dict[str
     }
     total_use_line = None
     try:
-        total_use_line = _find_line(rows, ("Total Use", "Total Domestic and Export Use"))
+        total_use_line = _find_line(
+            rows,
+            ("Use, Total", "Total Use", "Total Domestic and Export Use"),
+        )
     except RuntimeError:
         pass
     if total_use_line is not None:
