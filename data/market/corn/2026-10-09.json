@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "commodity": "corn",
+  "snapshot_id": "2026-10-09",
+  "release_date": "2026-10-09",
+  "status": "illustrative_demo",
+  "status_note": "Illustrative interview-demo inputs. Replace with an approved consensus source and licensed futures/options observations before public release.",
+  "consensus_source_label": "Illustrative pre-release consensus (demo input)",
+  "consensus_source_url": "",
+  "consensus": {
+    "beginning_stocks": 1950,
+    "production": 15900,
+    "feed_residual": 5980,
+    "exports": 3275,
+    "total_use": 16250,
+    "ending_stocks": 1700,
+    "stocks_to_use": 10.46
+  },
+  "market_reaction": {
+    "contract_family": "Corn futures; contract identifiers are illustrative",
+    "reference_price": 4.30,
+    "annualized_iv": 0.24,
+    "basis": -0.15,
+    "break_even": 4.15,
+    "put_premium": 0.18,
+    "storage_cost": 0.10,
+    "observations": [
+      {"label": "Release - 1 session", "date": "2026-10-08", "nearby": 4.31, "deferred": 4.46, "iv": 0.235},
+      {"label": "Release session", "date": "2026-10-09", "nearby": 4.27, "deferred": 4.42, "iv": 0.248},
+      {"label": "Release + 1 session", "date": "2026-10-12", "nearby": 4.25, "deferred": 4.40, "iv": 0.244},
+      {"label": "Release + 1 week", "date": "2026-10-16", "nearby": 4.30, "deferred": 4.45, "iv": 0.240}
+    ]
+  },
+  "price_outlook": {
+    "reference_price": 4.30,
+    "annualized_iv": 0.24,
+    "horizon_days": 30,
+    "method_label": "Illustrative scenario weights plus a volatility-based range. Replace with approved option-implied and historical/simulation estimates before public release.",
+    "scenarios": [
+      {"name": "Low", "probability": 0.30, "price_shift": -0.18, "width_factor": 1.00, "supply_demand_read": "Higher stocks-to-use, softer demand, or weaker exports", "producer_implication": "Prioritize downside protection for unpriced bushels and re-check storage economics."},
+      {"name": "Middle", "probability": 0.45, "price_shift": 0.00, "width_factor": 0.85, "supply_demand_read": "Current balance-sheet revision persists", "producer_implication": "Compare a staged hedge with the farm break-even and local basis."},
+      {"name": "High", "probability": 0.25, "price_shift": 0.20, "width_factor": 1.05, "supply_demand_read": "Lower stocks-to-use, stronger demand, or improved exports", "producer_implication": "A put or partial hedge can protect a floor while retaining upside."}
+    ]
+  },
+  "sources": [
+    {"label": "Market-data input contract", "url": "https://www.cmegroup.com/market-data.html"},
+    {"label": "Consensus source to be confirmed", "url": ""}
+  ]
+}

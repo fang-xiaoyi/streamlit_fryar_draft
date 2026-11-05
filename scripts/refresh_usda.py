@@ -30,10 +30,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from history_store import DATA_DIR, MANIFEST_PATH, NORMALIZED_DIR, LATEST_PATH, build_case, list_snapshots  # noqa: E402
 from usda_report_pipeline import (  # noqa: E402
     CASES,
-    branded_fact_sheet_html,
-    branded_report_html,
     generated_report,
 )
+from market_context import enhanced_fact_sheet_html, enhanced_report_html, full_report_markdown  # noqa: E402
 
 
 PARSER_VERSION = "usda-refresh-1.0"
@@ -419,18 +418,7 @@ def _sync_latest_pointer(commodity: str, manifest: dict[str, Any] | None = None)
 
 
 def _report_markdown(case: Any) -> str:
-    return (
-        f"# {case.commodity} USDA release report\n\n"
-        f"**Current release:** {case.current_label}  \n"
-        f"**Previous release:** {case.previous_label}  \n"
-        f"**Current release date:** {case.current_release_date}  \n"
-        f"**Previous release date:** {case.previous_release_date}\n\n"
-        f"{generated_report(case)}\n\n"
-        f"## Data note\n{case.note}\n\n"
-        "## Official sources\n"
-        + "\n".join(f"- [{label}]({url})" for label, url in case.sources)
-        + "\n"
-    )
+    return full_report_markdown(case)
 
 
 def _store_snapshot(
@@ -533,8 +521,8 @@ def _store_snapshot(
         report_dir = DATA_DIR / "reports" / commodity / snapshot_id
         report_dir.mkdir(parents=True, exist_ok=True)
         (report_dir / "report.md").write_text(_report_markdown(case), encoding="utf-8")
-        (report_dir / "fact_sheet.html").write_text(branded_fact_sheet_html(case), encoding="utf-8")
-        (report_dir / "extension_report.html").write_text(branded_report_html(case), encoding="utf-8")
+        (report_dir / "fact_sheet.html").write_text(enhanced_fact_sheet_html(case), encoding="utf-8")
+        (report_dir / "extension_report.html").write_text(enhanced_report_html(case), encoding="utf-8")
         record["report_paths"] = {
             "markdown": str((report_dir / "report.md").relative_to(PROJECT_ROOT)),
             "fact_sheet": str((report_dir / "fact_sheet.html").relative_to(PROJECT_ROOT)),

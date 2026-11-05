@@ -24,6 +24,9 @@ if str(PROJECT_ROOT) not in sys.path:
 import history_store as _history_store
 
 importlib.reload(_history_store)
+import market_context as _market_context
+
+importlib.reload(_market_context)
 
 from history_store import (  # noqa: E402
     COMMODITY_CATALOG,
@@ -33,6 +36,7 @@ from history_store import (  # noqa: E402
     latest_snapshot,
 )
 from usda_report_pipeline import metrics_for  # noqa: E402
+from market_context import context_for  # noqa: E402
 
 
 st.set_page_config(
@@ -235,6 +239,7 @@ with st.sidebar:
     )
     selected_record = next(row for row in records if row["snapshot_id"] == selected_id)
     case = build_case(commodity, selected_id)
+    market_context = context_for(case)
     st.caption(
         f"{case.current_label} · prior release: {case.previous_label} · "
         f"snapshot {selected_id}"
@@ -246,13 +251,16 @@ with st.sidebar:
     )
     consensus: dict[str, float | None] = {}
     if commodity == "corn":
+        if market_context.get("status") == "illustrative_demo":
+            st.warning("The pre-filled consensus values are illustrative interview-demo inputs. Replace them with a timestamped approved source before public release.")
         for label, field, units, _category in _corn_fields():
             if field == "feed_residual" or field == "ethanol":
                 continue
+            default_consensus = market_context.get("consensus", {}).get(field)
             consensus[field] = _optional_float(
                 st.text_input(
                     f"{label} ({units})",
-                    value="",
+                    value="" if default_consensus is None else str(default_consensus),
                     key=f"consensus_{field}_{selected_id}",
                 )
             )

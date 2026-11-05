@@ -39,7 +39,11 @@ The third page still uses transparent manual inputs. The second page now contain
 - Corn: production, yield, total use, exports, ending stocks, stocks-to-use, and USDA farm-price revision.
 - Cattle: inventory, placements, marketings, other disappearance, release-to-release changes, and year-over-year percentages.
 
-The page shows a stable extension-style template with blank tokens, fills the template using the real USDA snapshot, and lets the user download both a Markdown report and a normalized CSV. A future scheduled job can replace the snapshot dictionary with a parser for the official USDA WASDE XLS/XML/TXT and NASS Cattle on Feed files, validate the release date and units, and publish the same report without changing the UI.
+The page shows a stable extension-style template with blank tokens, fills the template using the real USDA snapshot, and lets the user download both a Markdown report and a normalized CSV. The WASDE product now follows the full decision chain: USDA release → supply/demand revision → consensus surprise → futures/calendar-spread reaction → conditional price scenarios → hedging and marketing implications. The October 2026 Corn demonstration includes a separate versioned market-context file under `data/market/`; its inputs are explicitly marked `illustrative_demo` until approved consensus and licensed futures/options data are connected.
+
+The report has two presentation layers: a one-page Fact Sheet for producers and industry executives, and a 4–6 page Full Report with release context, supply/demand revision, consensus surprise, market response, low/middle/high price outlook, marketing comparison, methods, limitations, and sources. The separate `Supply & Demand Analysis` page now pre-fills the Corn consensus fields from the same release-specific context file while preserving editable fields and explicit warnings.
+
+The market context is intentionally separated from USDA official snapshots. `market_context.py` joins a release-specific file by commodity and snapshot ID; replacing the demo JSON with a governed refresh does not require rewriting the Streamlit UI or report templates.
 
 The report preview/download now uses the local `Fryar-Center-logo.png`, the Center's cardinal-red visual accent (`#9E2B44`), Poppins-style typography, a branded header, “At a glance” metric cards, a red conclusion callout, a comparison table, methods/data note, official-source list, and University of Arkansas Division of Agriculture footer. The HTML download is self-contained: the logo is embedded so it does not depend on a local path after download.
 
@@ -134,7 +138,7 @@ streamlit run app.py
 
 ## Important limitations
 
-- The USDA report page uses validated versioned snapshots and a scheduled PDF refresh pipeline; if a new file cannot be parsed or validated, the prior release remains the latest published version and the Action run fails for review. No live futures, options, or basis data are fetched in the current draft. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
+- The USDA report page uses validated versioned snapshots and a scheduled PDF refresh pipeline; if a new file cannot be parsed or validated, the prior release remains the latest published version and the Action run fails for review. The current Corn market-context file is an interview-demo fixture, not a claim of live or licensed market data. Production deployment must replace it with timestamped consensus, futures, calendar-spread, and options-volatility observations whose license permits the intended display. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
 - Price and production draws are illustrative and should not be used for actual marketing, insurance, or trading decisions.
 - The Put and LRP calculations are simplified demonstrations; contract sizes, margin, transaction costs, coverage rules, settlement conventions, actual sale weight, basis treatment, and data licensing must be specified before public release.
 - The current draft does not optimize a user's timing. It compares explicitly defined strategies and reports tradeoffs.
@@ -149,3 +153,7 @@ streamlit run app.py
 6. Add live data credentials only after the Center confirms access, licensing, allowed redistribution, and update ownership.
 7. Move raw PDFs to object storage if repository size becomes a constraint; keep normalized snapshots and reports versioned.
 8. Add the poultry feed-cost view after the row-crop workflow is validated, using an explicit ration, feed-conversion ratio, procurement horizon, and broiler output-price assumption.
+
+### Market-context data contract
+
+Each release-specific file under `data/market/<commodity>/<snapshot_id>.json` may contain `consensus`, `market_reaction`, `price_outlook`, and source/status metadata. The app does not silently turn missing data into a forecast: absent context is shown as absent, and `illustrative_demo` fixtures carry a visible warning in the UI and downloadable reports.
