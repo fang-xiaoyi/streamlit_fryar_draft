@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 
-POLL_ID = "auburn-stakeholder-demo"
+POLL_ID = "stakeholder-demo"
 
 POLL_PRESETS: dict[str, dict[str, Any]] = {
     "decision": {

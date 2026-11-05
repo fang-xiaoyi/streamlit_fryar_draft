@@ -35,8 +35,8 @@ from core import (
     lrp_break_even_summary,
     lrp_profit_curve,
     lrp_scenario_values,
+    livestock_margin_check,
     livestock_benchmark_options,
-    payoff_curve,
     simulate_poultry_feed_strategies,
     simulate_strategies,
     strategy_options,
@@ -90,17 +90,17 @@ st.markdown(
         color: #6b3f00;
         margin: .7rem 0 1rem 0;
     }
-    .auburn-cover {
+    .margin-cover {
         padding: 1.15rem 1.35rem;
-        border: 1px solid #ead3d7;
-        border-left: 7px solid #9e2b44;
+        border: 1px solid #cfe4dc;
+        border-left: 7px solid #4c956c;
         border-radius: 10px;
-        background: linear-gradient(135deg, #fff8f5 0%, #f7f9fb 100%);
+        background: linear-gradient(135deg, #f1f8f4 0%, #f7f9fb 100%);
         margin: .8rem 0 1.1rem 0;
     }
-    .auburn-cover .eyebrow {color: #9e2b44; font-size: .76rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;}
-    .auburn-cover h2 {color: #243b53; margin: .2rem 0 .35rem 0;}
-    .auburn-cover p {color: #52606d; margin: 0; max-width: 920px;}
+    .margin-cover .eyebrow {color: #2f855a; font-size: .76rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;}
+    .margin-cover h2 {color: #243b53; margin: .2rem 0 .35rem 0;}
+    .margin-cover p {color: #52606d; margin: 0; max-width: 920px;}
     div[data-testid="stMetric"] {background: #f8fafc; border: 1px solid #e6edf2; padding: .8rem; border-radius: 12px;}
     div[data-testid="stMetricLabel"] {font-size: .78rem;}
     [data-testid="stSidebar"] {background: #f5f8fa;}
@@ -122,6 +122,33 @@ def pct(value: float) -> str:
     return f"{value:.0%}"
 
 
+LIVESTOCK_COST_LABELS = {
+    "pasture": "Pasture / forage cost per head",
+    "feed": "Feed cost per head",
+    "health": "Health / veterinary cost per head",
+    "replacements": "Replacement cost per head",
+    "machinery": "Machinery / equipment cost per head",
+    "labor": "Labor cost per head",
+    "land": "Land / ownership cost per head",
+    "other": "Other operating cost per head",
+}
+
+
+def _livestock_cost_defaults(commodity: str, defaults: dict[str, object]) -> dict[str, float]:
+    """Create editable per-head defaults while keeping the margin layer auditable."""
+
+    total = float(defaults["cost_per_unit"]) * float(defaults["weight_per_head"]) / 100.0
+    shares = (
+        [0.35, 0.16, 0.08, 0.12, 0.08, 0.06, 0.08, 0.07]
+        if commodity == "Fed Cattle"
+        else [0.25, 0.32, 0.08, 0.08, 0.07, 0.06, 0.06, 0.08]
+    )
+    return {
+        key: round(total * share, 2)
+        for key, share in zip(LIVESTOCK_COST_LABELS, shares)
+    }
+
+
 def _query_value(name: str, default: str = "") -> str:
     """Read a simple Streamlit query parameter across supported versions."""
 
@@ -134,7 +161,7 @@ def _query_value(name: str, default: str = "") -> str:
 def _audience_url_default() -> str:
     return os.getenv(
         "FRYAR_AUDIENCE_URL",
-        "http://localhost:8501/?mode=audience&poll=auburn-stakeholder-demo",
+        "http://localhost:8501/?mode=audience&poll=stakeholder-demo",
     )
 
 
@@ -165,7 +192,7 @@ def _render_audience_mode() -> None:
     st.markdown(
         """
         <div class="hero">
-          <div class="hero-kicker">Auburn stakeholder example · live audience pulse</div>
+          <div class="hero-kicker">Stakeholder example · live audience pulse</div>
           <h1>Start with your decision</h1>
           <p>Your anonymous response will appear on the presenter’s screen.</p>
         </div>
@@ -203,7 +230,7 @@ def _render_live_results() -> None:
     st.markdown(
         """
         <div class="hero">
-          <div class="hero-kicker">Auburn stakeholder example · presenter screen</div>
+          <div class="hero-kicker">Stakeholder example · presenter screen</div>
           <h1>Live audience pulse</h1>
           <p>Scan the QR code, answer the question, and watch the response pattern update.</p>
         </div>
@@ -336,6 +363,11 @@ with st.sidebar:
     kind = defaults["kind"]
 
     st.markdown("#### Farm or operation")
+    livestock_costs: dict[str, float] = {}
+    livestock_history: dict[str, float] = {}
+    grazing_acres = 0.0
+    production_rate = 100.0
+    other_revenue_per_head = 0.0
     if kind == "crop":
         acres = st.number_input(
             "Planted acres",
@@ -406,13 +438,31 @@ with st.sidebar:
         poultry_other_feed_share = 1.0 - poultry_corn_share - poultry_soymeal_share
         st.caption(f"Other feed ingredients: {poultry_other_feed_share:.0%} of ration")
     else:
+        st.markdown("#### Livestock margin check")
         head = st.number_input(
-            "Expected head",
+            "Livestock units / head",
             min_value=1.0,
             max_value=100000.0,
             value=float(defaults["head"]),
             step=10.0,
             key=f"head_{commodity}",
+        )
+        grazing_acres = st.number_input(
+            "Grazing / production acres",
+            min_value=0.0,
+            max_value=100000.0,
+            value=float(defaults.get("grazing_acres", 0.0)),
+            step=10.0,
+            key=f"grazing_acres_{commodity}",
+        )
+        production_rate = st.number_input(
+            "Sale / weaning rate (%)",
+            min_value=1.0,
+            max_value=100.0,
+            value=float(defaults.get("production_rate", 100.0)),
+            step=1.0,
+            key=f"production_rate_{commodity}",
+            help="The share of the livestock units expected to produce the modeled sale weight.",
         )
         weight_per_head = st.number_input(
             "Expected sale weight (lb/head)",
@@ -422,13 +472,59 @@ with st.sidebar:
             step=10.0,
             key=f"weight_{commodity}",
         )
-        cost_per_unit = st.number_input(
-            "Production cost ($/cwt)",
+        other_revenue_per_head = st.number_input(
+            "Cull / other revenue ($/head)",
             min_value=0.0,
-            max_value=500.0,
-            value=float(defaults["cost_per_unit"]),
-            step=1.0,
-            key=f"cost_{commodity}",
+            max_value=10000.0,
+            value=float(defaults.get("other_revenue_per_head", 0.0)),
+            step=5.0,
+            key=f"other_revenue_{commodity}",
+            help="Other revenue is credited against the sale-price break-even calculation.",
+        )
+        with st.expander("Annual cost breakdown per head", expanded=True):
+            st.caption("These categories drive total cost, margin, and break-even price.")
+            cost_defaults = _livestock_cost_defaults(commodity, defaults)
+            for cost_key, cost_label in LIVESTOCK_COST_LABELS.items():
+                livestock_costs[cost_key] = st.number_input(
+                    cost_label,
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=float(cost_defaults[cost_key]),
+                    step=5.0,
+                    key=f"livestock_cost_{commodity}_{cost_key}",
+                )
+            livestock_history = {
+                "previous": st.number_input(
+                    "Previous year total cost / head (optional)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=0.0,
+                    step=10.0,
+                    key=f"livestock_history_previous_{commodity}",
+                ),
+                "three_year": st.number_input(
+                    "3-year average total cost / head (optional)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=0.0,
+                    step=10.0,
+                    key=f"livestock_history_three_year_{commodity}",
+                ),
+                "five_year": st.number_input(
+                    "5-year average total cost / head (optional)",
+                    min_value=0.0,
+                    max_value=100000.0,
+                    value=0.0,
+                    step=10.0,
+                    key=f"livestock_history_five_year_{commodity}",
+                ),
+            }
+        total_cost_per_head = sum(livestock_costs.values())
+        sold_cwt_per_head = weight_per_head * production_rate / 10000.0
+        cost_per_unit = total_cost_per_head / sold_cwt_per_head if sold_cwt_per_head else 0.0
+        st.caption(
+            f"Total cost: ${total_cost_per_head:,.2f}/head · "
+            f"${cost_per_unit:,.2f}/cwt of expected sale output"
         )
 
     st.markdown("#### Market and timing assumptions")
@@ -658,8 +754,9 @@ with st.sidebar:
     st.markdown("#### Strategy assumptions")
     if kind == "livestock":
         st.caption(
-            "This is the Auburn-style decision step: choose how many animals to insure, "
-            "how much price coverage to buy, and how long the endorsement should run."
+            "Choose how many animals to protect, how much price coverage to buy, and "
+            "how long the LRP endorsement should run. The strategy selector below also "
+            "includes a put-option scenario."
         )
         lrp_covered_head = st.number_input(
             "LRP covered head",
@@ -712,9 +809,9 @@ with st.sidebar:
             key=f"target_{commodity}",
         )
         protection_label = (
-            "LRP coverage price / insured price"
+            "LRP coverage price / put strike"
             if kind == "livestock"
-            else "Protection level / coverage price"
+            else "Put option strike / protection level"
         )
         default_protection_price = (
             float(base_price * lrp_coverage_level)
@@ -739,7 +836,11 @@ with st.sidebar:
                 else None
             ),
         )
-        premium_label = "LRP producer premium" if kind == "livestock" else "Illustrative premium"
+        premium_label = (
+            "LRP premium / put option cost"
+            if kind == "livestock"
+            else "Put option premium"
+        )
         premium = st.number_input(
             f"{premium_label} ({defaults['unit']})",
             min_value=0.0,
@@ -748,8 +849,8 @@ with st.sidebar:
             step=0.05,
             key=f"premium_{commodity}",
             help=(
-                "Enter the producer-paid LRP premium per covered cwt. "
-                "When loaded, the value is prefilled from the official RMA quote; "
+                "Enter the cost of the selected protection per covered unit. "
+                "For LRP, the value is prefilled from the official RMA quote when available; "
                 "you can edit it for a scenario."
                 if kind == "livestock"
                 else None
@@ -764,7 +865,9 @@ with st.sidebar:
             "Balanced feed hedge",
         ]
     else:
-        default_strategies = ["Unhedged / wait", "Futures hedge", "Put floor" if kind == "crop" else "LRP floor"]
+        default_strategies = ["Unhedged / wait", "Futures hedge", "Put option"]
+        if kind == "livestock":
+            default_strategies.append("LRP")
     strategies = st.multiselect(
         "Strategies to compare",
         strategy_choices,
@@ -780,10 +883,10 @@ if kind == "livestock":
     with cover_text_col:
         st.markdown(
             """
-            <div class="auburn-cover">
-              <div class="eyebrow">Producer margin &amp; price-risk decision support</div>
+            <div class="margin-cover">
+              <div class="eyebrow">Livestock margin &amp; price-risk decision support</div>
               <h2>Livestock Producer Margin Check</h2>
-              <p>Enter the operation's break-even economics, compare the result with an Extension or USDA benchmark, then test how the number of head and coverage level change the LRP decision.</p>
+              <p>Start with exposed pounds, gross revenue, total cost, margin, and break-even price. Then compare the operation with an Arkansas Extension or USDA benchmark and test LRP and put-option protection.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -914,8 +1017,13 @@ params = {
     "yield_per_acre": locals().get("yield_per_acre"),
     "cost_per_acre": locals().get("cost_per_acre"),
     "head": locals().get("head"),
+    "grazing_acres": locals().get("grazing_acres", 0.0),
+    "production_rate": locals().get("production_rate", 100.0),
     "weight_per_head": locals().get("weight_per_head"),
     "cost_per_unit": locals().get("cost_per_unit"),
+    "livestock_costs": livestock_costs if kind == "livestock" else {},
+    "livestock_history": livestock_history if kind == "livestock" else {},
+    "other_revenue_per_head": other_revenue_per_head if kind == "livestock" else 0.0,
     "base_price": base_price,
     "basis": basis,
     "storage": storage,
@@ -1000,28 +1108,181 @@ if view == "Extension demo":
     )
 
 
-tab_labels = [
-    "Strategy comparison",
-    "Price and payoff",
-    "Assumptions",
-    "Sources and roadmap",
-]
 if kind == "livestock":
-    tab_labels.insert(0, "LRP decision")
-
-tabs = st.tabs(tab_labels)
-if kind == "livestock":
-    lrp_tab, tab1, tab2, tab3, tab4 = tabs
+    tab_labels = [
+        "Margin check",
+        "LRP & put options",
+        "Strategy comparison",
+        "Assumptions",
+        "Sources and roadmap",
+    ]
+    tabs = st.tabs(tab_labels)
+    margin_tab, lrp_tab, tab1, tab3, tab4 = tabs
 else:
-    tab1, tab2, tab3, tab4 = tabs
+    tab_labels = [
+        "Strategy comparison",
+        "Assumptions",
+        "Sources and roadmap",
+    ]
+    tabs = st.tabs(tab_labels)
+    tab1, tab3, tab4 = tabs
+
+
+if kind == "livestock":
+    with margin_tab:
+        st.markdown("### Operation margin check")
+        st.caption(
+            "The first step is an operation-level check: expected pounds sold, gross revenue, "
+            "total cost, margin, and the sale price needed to cover cost. The calculation uses "
+            "the same cost-per-head logic throughout the benchmark and protection screens."
+        )
+        margin = livestock_margin_check(params)
+        margin_cols = st.columns(4)
+        margin_cols[0].metric(
+            "Pounds sold / exposed head",
+            f"{margin['pounds_per_head']:,.0f} lb",
+        )
+        margin_cols[1].metric(
+            "Gross revenue / head",
+            money(margin["gross_revenue_per_head"]),
+        )
+        margin_cols[2].metric(
+            "Total cost / head",
+            money(margin["total_cost_per_head"]),
+        )
+        margin_cols[3].metric(
+            "Margin / head",
+            money(margin["margin_per_head"]),
+            "positive margin" if margin["margin_per_head"] >= 0 else "below zero",
+            delta_color="normal" if margin["margin_per_head"] >= 0 else "inverse",
+        )
+
+        margin_cols2 = st.columns(4)
+        margin_cols2[0].metric(
+            "Break-even sale price",
+            f"{money(margin['break_even_price_per_cwt'])}/cwt",
+        )
+        margin_cols2[1].metric(
+            "Break-even sale price",
+            f"{money(margin['break_even_price_per_lb'])}/lb",
+        )
+        margin_cols2[2].metric(
+            "Estimated annual margin",
+            money(margin["annual_margin"]),
+        )
+        margin_cols2[3].metric(
+            "Acres / head",
+            f"{margin['acres_per_head']:.1f}" if margin["acres_per_head"] is not None else "—",
+        )
+
+        st.markdown("#### Revenue and cost bridge")
+        bridge = pd.DataFrame(
+            {
+                "Measure": [
+                    "Sale revenue / head",
+                    "Cull / other revenue / head",
+                    "Gross revenue / head",
+                    "Total cost / head",
+                    "Margin / head",
+                ],
+                "Value": [
+                    money(margin["sale_revenue_per_head"]),
+                    money(margin["other_revenue_per_head"]),
+                    money(margin["gross_revenue_per_head"]),
+                    money(margin["total_cost_per_head"]),
+                    money(margin["margin_per_head"]),
+                ],
+            }
+        )
+        st.dataframe(bridge, width="stretch", hide_index=True)
+
+        st.markdown("#### Benchmark comparison")
+        benchmark_options = livestock_benchmark_options(commodity)
+        benchmark_names = [item["name"] for item in benchmark_options]
+        benchmark_key = f"livestock_benchmark_{commodity}"
+        selected_benchmark_name = st.selectbox(
+            "Benchmark reference",
+            benchmark_names,
+            key=benchmark_key,
+            help="Use an Arkansas Extension, USDA, or approved representative-farm benchmark with matching enterprise and units.",
+        )
+        selected_benchmark = next(
+            item for item in benchmark_options if item["name"] == selected_benchmark_name
+        )
+        benchmark_default = selected_benchmark.get("break_even_price")
+        benchmark_be_price = st.number_input(
+            "Benchmark break-even sale price ($/cwt)",
+            min_value=0.01,
+            max_value=1000.0,
+            value=float(benchmark_default or margin["break_even_price_per_cwt"]),
+            step=0.25,
+            key=f"benchmark_be_{commodity}_{selected_benchmark['key']}",
+            help="Editable so an approved Arkansas or USDA source-year value can be inserted without changing the formula layer.",
+        )
+        benchmark_gap = margin["break_even_price_per_cwt"] - benchmark_be_price
+        benchmark_cols = st.columns(3)
+        benchmark_cols[0].metric(
+            "Your break-even",
+            f"{money(margin['break_even_price_per_cwt'])}/cwt",
+        )
+        benchmark_cols[1].metric(
+            "Selected benchmark",
+            f"{money(benchmark_be_price)}/cwt",
+        )
+        benchmark_cols[2].metric(
+            "Gap vs benchmark",
+            f"{money(benchmark_gap)}/cwt",
+            "higher cost" if benchmark_gap > 0 else "lower cost",
+            delta_color="inverse" if benchmark_gap > 0 else "normal",
+        )
+        st.caption(
+            f"{selected_benchmark['scope']}. {selected_benchmark['note']}"
+            + (
+                f" [Source]({selected_benchmark['source']})"
+                if selected_benchmark.get("source")
+                else ""
+            )
+        )
+
+        cost_rows = [
+            [label, money(params["livestock_costs"].get(key, 0.0))]
+            for key, label in LIVESTOCK_COST_LABELS.items()
+        ]
+        st.markdown("#### Cost breakdown")
+        st.dataframe(
+            pd.DataFrame(cost_rows, columns=["Cost category", "Your operation / head"]),
+            width="stretch",
+            hide_index=True,
+        )
+        history_rows = []
+        for label, key in [
+            ("Previous year", "previous"),
+            ("3-year average", "three_year"),
+            ("5-year average", "five_year"),
+        ]:
+            if params["livestock_history"].get(key, 0.0) > 0:
+                history_value = params["livestock_history"][key]
+                history_rows.append(
+                    [label, money(history_value), money(margin["total_cost_per_head"] - history_value)]
+                )
+        if history_rows:
+            st.markdown("#### Your history")
+            st.dataframe(
+                pd.DataFrame(
+                    history_rows,
+                    columns=["Reference", "Historical cost / head", "Current minus reference"],
+                ),
+                width="stretch",
+                hide_index=True,
+            )
 
 if kind == "livestock":
     with lrp_tab:
-        st.markdown("### LRP price-protection decision")
+        st.markdown("### LRP and put-option decision")
         st.caption(
-            "Compare the modeled operation with no LRP and with an LRP policy. "
-            "The LRP indemnity is applied only to the covered share and is based "
-            "on the modeled ending value."
+            "Compare the modeled operation with no protection, an LRP policy, and a put option. "
+            "LRP indemnity is applied only to the covered share and is based on the modeled ending value; "
+            "the strategy comparison also shows the put-option scenario."
         )
         if rma_quote_meta:
             st.markdown(
@@ -1035,31 +1296,6 @@ if kind == "livestock":
             )
 
         lrp_summary = lrp_break_even_summary(params)
-        benchmark_options = livestock_benchmark_options(commodity)
-        benchmark_names = [item["name"] for item in benchmark_options]
-        selected_benchmark_name = st.selectbox(
-            "Benchmark reference",
-            benchmark_names,
-            key=f"livestock_benchmark_{commodity}",
-            help="Use an Extension, USDA, or representative-farm benchmark with matching units and scope.",
-        )
-        selected_benchmark = next(
-            item for item in benchmark_options if item["name"] == selected_benchmark_name
-        )
-        benchmark_default = selected_benchmark.get("break_even_price")
-        benchmark_be_price = st.number_input(
-            "Benchmark break-even market price ($/cwt)",
-            min_value=0.01,
-            max_value=1000.0,
-            value=float(benchmark_default or lrp_summary["operating_break_even_ending_value"]),
-            step=0.25,
-            key=f"benchmark_be_{commodity}_{selected_benchmark['key']}",
-            help="Editable so a Fryar representative-farm or USDA series can be inserted without changing the formula layer.",
-        )
-        st.caption(
-            f"{selected_benchmark['scope']}. {selected_benchmark['note']}"
-            + (f" [Source]({selected_benchmark['source']})" if selected_benchmark.get("source") else "")
-        )
         benchmark_gap = lrp_summary["operating_break_even_ending_value"] - benchmark_be_price
         benchmark_cols = st.columns(3)
         benchmark_cols[0].metric(
@@ -1291,81 +1527,6 @@ with tab1:
             '<div class="warning-callout"><strong>Interpretation:</strong> A strategy with the highest expected margin is not automatically the best choice. Producers may rationally accept a lower mean outcome to reduce the probability of a severe downside result.</div>',
             unsafe_allow_html=True,
         )
-
-with tab2:
-    st.markdown("### How terminal market price becomes producer result")
-    st.caption(
-        "Read the chart from left to right: the x-axis is the market price at sale; "
-        "the y-axis is the net price received after basis, storage, and the selected hedge or insurance cost. "
-        "The green line is the selected strategy; the gray line is waiting with no protection."
-    )
-    selected_strategy = st.selectbox("Show payoff curve for", strategies)
-    curve = payoff_curve(selected_strategy, params)
-    unhedged_curve = payoff_curve("Unhedged / wait", params)
-    break_even_net_price = (
-        params["cost_per_unit"]
-        if kind == "livestock"
-        else params["cost_per_acre"] / params["yield_per_acre"]
-    )
-    selected_at_entry = curve.iloc[(curve["Terminal price"] - base_price).abs().idxmin()]
-    payoff_cols = st.columns(3)
-    payoff_cols[0].metric("Net price at entry", money(float(selected_at_entry["Net price"])))
-    payoff_cols[1].metric("Price needed to cover cost", money(float(break_even_net_price)))
-    payoff_cols[2].metric(
-        "Selected strategy at entry",
-        money(float(selected_at_entry["Margin"])),
-        "margin / acre" if kind == "crop" else "margin / cwt",
-    )
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=curve["Terminal price"],
-            y=curve["Net price"],
-            mode="lines",
-            name=selected_strategy,
-            line=dict(color="#1f7a5c", width=4),
-        )
-    )
-    fig.add_trace(
-        go.Scatter(
-            x=unhedged_curve["Terminal price"],
-            y=unhedged_curve["Net price"],
-            mode="lines",
-            name="Unhedged / wait",
-            line=dict(color="#94a3b8", width=2, dash="dot"),
-        )
-    )
-    fig.add_vline(x=base_price, line_dash="dash", line_color="#52606d", annotation_text="Entry price")
-    fig.add_hline(
-        y=break_even_net_price,
-        line_dash="dot",
-        line_color="#d64545",
-        line_width=2,
-        annotation_text="Break-even net price",
-    )
-    if kind == "livestock":
-        fig.add_vline(
-            x=strike,
-            line_dash="dash",
-            line_color="#d97706",
-            annotation_text="LRP coverage price",
-        )
-    fig.update_layout(
-        title=f"{selected_strategy}: terminal price → net price received",
-        xaxis_title=f"Terminal price ({defaults['unit']})",
-        yaxis_title=f"Net price received ({defaults['unit']})",
-        height=500,
-        template="plotly_white",
-        hovermode="x unified",
-        margin=dict(l=10, r=10, t=55, b=10),
-    )
-    st.plotly_chart(fig, width="stretch")
-    st.markdown(
-        "**How to read it:** move right to ask what happens at a higher terminal price; "
-        "the vertical distance between the green and gray lines is the modeled value of protection; "
-        "the red line is the net price required to cover the modeled operating cost. "
-        "This is a price-risk teaching view, not a guaranteed profit curve."
-    )
 
 with tab3:
     st.markdown("### What the current draft assumes")

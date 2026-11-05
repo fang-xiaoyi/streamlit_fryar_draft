@@ -7,7 +7,7 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 - scenario-based decision support for crop and livestock producers;
 - comparison of cash sale, unhedged/wait, futures hedge, staged hedge, Put, and LRP-style floor strategies;
 - a dedicated livestock LRP decision tab comparing no LRP versus buying LRP, including coverage share, premium, indemnity, modeled break-even, profit, and residual-risk interpretation;
-- an Auburn-style livestock margin layer with operating and LRP-adjusted break-even prices, editable regional/USDA benchmark context, and a covered-head scenario grid;
+- a livestock margin-check first step with exposed pounds, gross revenue, detailed cost categories, margin, break-even price, Arkansas/USDA benchmark context, and a covered-head scenario grid;
 - an optional live USDA RMA LRP quote workflow that loads the official coverage price, coverage level, endorsement length, end date, and producer premium, then pre-fills the transparent scenario model;
 - price, production/quantity, basis, storage, hedge-share, target-price, and protection-cost inputs;
 - expected, P10, P50, and P90 net-price outcomes;
@@ -17,12 +17,12 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 - a planned poultry feed-cost extension that passes corn and soybean-meal price risk through a ration into poultry margins;
 - a pathway to connect the product to Fryar's broader tools and monthly USDA/WASDE information.
 
-For livestock, the interface follows the user's Auburn interview prototype: operation
-economics first, then break-even and benchmark context, then the producer chooses
-covered head, coverage level, endorsement length, and compares LRP with cash sale,
-wait, futures, staged hedge, or put/floor strategies. The terminal-price view is
-shown as a price-to-net-price bridge with an explicit break-even line rather than as
-an unlabeled payoff curve.
+For livestock, the interface starts with operation economics: exposed pounds,
+sale and other revenue, detailed per-head costs, margin, and break-even price.
+The producer then chooses covered head, coverage level, endorsement length, and
+compares LRP, put-option, cash-sale, futures, and staged-hedge scenarios. Crop
+workflows do not show LRP; they show crop-appropriate futures, staged-hedge, and
+put-option tools.
 
 The draft now includes three demonstrable tools in one Streamlit toolbox:
 
@@ -62,8 +62,8 @@ multi-instance deployment should replace it with Postgres/Supabase.
 After starting Streamlit, use the same app with these query parameters:
 
 ```text
-http://localhost:8501/?mode=audience&poll=auburn-stakeholder-demo
-http://localhost:8501/?mode=screen&poll=auburn-stakeholder-demo
+http://localhost:8501/?mode=audience&poll=stakeholder-demo
+http://localhost:8501/?mode=screen&poll=stakeholder-demo
 http://localhost:8501/
 ```
 

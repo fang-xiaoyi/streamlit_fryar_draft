@@ -66,7 +66,10 @@ COMMODITY_DEFAULTS: dict[str, dict[str, Any]] = {
         "unit": "$/cwt",
         "quantity_unit": "cwt",
         "head": 150.0,
+        "grazing_acres": 350.0,
+        "production_rate": 100.0,
         "weight_per_head": 1400.0,
+        "other_revenue_per_head": 0.0,
         "cost_per_unit": 180.0,
         "base_price": 190.0,
         "basis": 0.0,
@@ -82,7 +85,10 @@ COMMODITY_DEFAULTS: dict[str, dict[str, Any]] = {
         "unit": "$/cwt",
         "quantity_unit": "cwt",
         "head": 500.0,
+        "grazing_acres": 0.0,
+        "production_rate": 100.0,
         "weight_per_head": 280.0,
+        "other_revenue_per_head": 0.0,
         "cost_per_unit": 78.0,
         "base_price": 90.0,
         "basis": 0.0,
@@ -129,62 +135,61 @@ COMMODITY_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
-# Auburn-style benchmark context for the livestock decision screen.  The first
-# reference is transcribed from the user's Producer Margin Check prototype.  It
-# is intentionally labelled as context: an Alabama cow-calf enterprise budget
-# is not the same enterprise as fed cattle or hog finishing.  The editable
-# regional/national rows give Extension staff a visible place to insert an
-# approved benchmark series when the data partnership is established.
+# Benchmark context for the livestock margin screen.  The values are deliberately
+# editable because an Arkansas cow-calf budget, a fed-cattle finishing budget,
+# and a hog budget are different enterprises.  The source slots make it possible
+# to connect an approved Arkansas Extension or USDA series without changing the
+# calculation layer.
 LIVESTOCK_BENCHMARKS: dict[str, list[dict[str, Any]]] = {
     "Fed Cattle": [
         {
-            "key": "auburn-aces-cow-calf-context",
-            "name": "Auburn-style Alabama cow-calf case (context)",
-            "break_even_price": 191.94,
-            "scope": "ACES 2022 cow-calf case; $1.92/lb converted to $/cwt",
-            "source": "https://www.aces.edu/blog/topics/farm-management/south-alabama-cow-calf-enterprise-cost-study/",
-            "note": "Use as an Auburn-style teaching reference, not as a directly comparable fed-cattle finishing budget.",
+            "key": "arkansas-uaex-cow-calf-budget",
+            "name": "Arkansas Extension cow-calf budget (editable)",
+            "break_even_price": None,
+            "scope": "Arkansas Cooperative Extension cow/calf enterprise budget",
+            "source": "https://www.uaex.uada.edu/farm-ranch/economics-marketing/farm-planning/Cow_Calf_Budget_Instructions.pdf",
+            "note": "Enter the source-year break-even value after confirming the enterprise and units match this operation.",
         },
         {
-            "key": "regional-editable-fed-cattle",
-            "name": "Regional representative farm (editable)",
+            "key": "arkansas-uaex-livestock-tools",
+            "name": "Arkansas Extension livestock budget tools (editable)",
             "break_even_price": None,
-            "scope": "Enter an approved regional fed-cattle budget",
-            "source": "",
-            "note": "Placeholder for a Fryar/Extension representative-farm benchmark.",
+            "scope": "Arkansas livestock planning and decision aids",
+            "source": "https://www.uaex.uada.edu/farm-ranch/economics-marketing/farm-planning/tools-decision-aids.aspx",
+            "note": "Use a matching cattle enterprise budget and retain the source year with the benchmark.",
         },
         {
-            "key": "usda-editable-fed-cattle",
-            "name": "USDA / national context (editable)",
+            "key": "usda-ers-beef-context",
+            "name": "USDA ERS beef-cattle context (editable)",
             "break_even_price": None,
-            "scope": "Enter an approved USDA or national cost series",
+            "scope": "USDA ERS cattle and beef context",
             "source": "https://www.ers.usda.gov/topics/animal-products/cattle-beef/",
-            "note": "National cost definitions may not match an individual operation; keep the source year visible.",
+            "note": "National definitions may not match an individual operation; keep source year and enterprise scope visible.",
         },
     ],
     "Hogs": [
         {
-            "key": "regional-editable-hogs",
-            "name": "Regional representative hog farm (editable)",
+            "key": "arkansas-uaex-livestock-tools-hogs",
+            "name": "Arkansas Extension livestock budget tools (editable)",
             "break_even_price": None,
-            "scope": "Enter an approved regional hog budget",
-            "source": "",
-            "note": "Placeholder for a Fryar/Extension representative-farm benchmark.",
+            "scope": "Arkansas livestock planning and decision aids",
+            "source": "https://www.uaex.uada.edu/farm-ranch/economics-marketing/farm-planning/tools-decision-aids.aspx",
+            "note": "Use a matching hog enterprise budget and retain the source year with the benchmark.",
         },
         {
-            "key": "usda-editable-hogs",
-            "name": "USDA / national context (editable)",
+            "key": "usda-ers-pork-context",
+            "name": "USDA ERS pork context (editable)",
             "break_even_price": None,
             "scope": "Enter an approved USDA or national cost series",
             "source": "https://www.ers.usda.gov/topics/animal-products/pork/",
-            "note": "National cost definitions may not match an individual operation; keep the source year visible.",
+            "note": "National definitions may not match an individual operation; keep source year and enterprise scope visible.",
         },
     ],
 }
 
 
 def livestock_benchmark_options(commodity: str) -> list[dict[str, Any]]:
-    """Return benchmark choices for the Auburn-style livestock layer."""
+    """Return Arkansas/USDA benchmark choices for the livestock margin layer."""
 
     return LIVESTOCK_BENCHMARKS.get(
         commodity,
@@ -219,7 +224,9 @@ def strategy_options(kind: str) -> list[str]:
         "Futures hedge",
         "Staged hedge (50% now)",
     ]
-    options.append("Put floor" if kind == "crop" else "LRP floor")
+    options.append("Put option")
+    if kind == "livestock":
+        options.append("LRP")
     return options
 
 
@@ -395,7 +402,12 @@ def _draw_price_and_quantity(
         quantity = params["acres"] * params["yield_per_acre"] * quantity_factor
     else:
         quantity = (
-            params["head"] * params["weight_per_head"] / 100.0 * quantity_factor
+            params["head"]
+            * params["weight_per_head"]
+            / 100.0
+            * float(params.get("production_rate", 100.0))
+            / 100.0
+            * quantity_factor
         )
 
     return terminal_price, quantity
@@ -413,26 +425,44 @@ def _net_price(
     storage = params["storage"]
     entry_price = params["base_price"]
     hedge_ratio = params["hedge_ratio"]
+    other_revenue_per_cwt = 0.0
+    if params["kind"] == "livestock":
+        sold_cwt_per_head = (
+            params["weight_per_head"]
+            * float(params.get("production_rate", 100.0))
+            / 10000.0
+        )
+        if sold_cwt_per_head > 0:
+            other_revenue_per_cwt = float(
+                params.get("other_revenue_per_head", 0.0)
+            ) / sold_cwt_per_head
 
     if strategy == "Cash sale now":
-        return np.full_like(price, entry_price + basis - storage)
+        return np.full_like(price, entry_price + basis - storage + other_revenue_per_cwt)
 
     if strategy == "Unhedged / wait":
-        return price + basis - storage
+        return price + basis - storage + other_revenue_per_cwt
 
     if strategy == "Futures hedge":
         futures_gain = hedge_ratio * (entry_price - price)
-        return price + basis + futures_gain - storage
+        return price + basis + futures_gain - storage + other_revenue_per_cwt
 
     if strategy == "Staged hedge (50% now)":
         staged_ratio = 0.50 * hedge_ratio
         futures_gain = staged_ratio * (entry_price - price)
-        return price + basis + futures_gain - storage
+        return price + basis + futures_gain - storage + other_revenue_per_cwt
 
-    if strategy in {"Put floor", "LRP floor"}:
+    if strategy in {"Put option", "LRP", "Put floor", "LRP floor"}:
         floor_payoff = np.maximum(params["strike"] - price, 0.0)
         protection_cost = hedge_ratio * params["premium"]
-        return price + basis + hedge_ratio * floor_payoff - protection_cost - storage
+        return (
+            price
+            + basis
+            + hedge_ratio * floor_payoff
+            - protection_cost
+            - storage
+            + other_revenue_per_cwt
+        )
 
     raise ValueError(f"Unknown strategy: {strategy}")
 
@@ -520,28 +550,75 @@ def summarize(
     return pd.DataFrame(rows)
 
 
-def payoff_curve(
-    strategy: str, params: dict[str, Any], n_points: int = 160
-) -> pd.DataFrame:
-    """Create a transparent terminal-price payoff curve using expected quantity."""
+def livestock_margin_check(params: dict[str, Any]) -> dict[str, Any]:
+    """Calculate the operation-level livestock margin and break-even price.
 
-    low = max(0.01, params["base_price"] * 0.50)
-    high = params["base_price"] * 1.50
-    terminal = np.linspace(low, high, n_points)
-    net_price = _net_price(terminal, strategy, params)
+    The calculation is intentionally simple and auditable: exposed pounds are
+    sale weight multiplied by the sale/weaning rate; gross revenue combines
+    sale revenue and cull/other revenue; total cost is the sum of user-entered
+    per-head cost categories; and break-even price is the price that covers
+    total cost after other revenue.  The same result is then used by the LRP
+    and put-option scenario layers.
+    """
 
-    if params["kind"] == "crop":
-        margin = net_price * params["yield_per_acre"] - params["cost_per_acre"]
-    else:
-        margin = net_price - params["cost_per_unit"]
+    if params["kind"] != "livestock":
+        raise ValueError("The margin check is currently available for livestock only.")
 
-    return pd.DataFrame(
-        {
-            "Terminal price": terminal,
-            "Net price": net_price,
-            "Margin": margin,
-        }
+    production_rate = float(params.get("production_rate", 100.0)) / 100.0
+    pounds_per_head = float(params["weight_per_head"]) * production_rate
+    sold_cwt_per_head = pounds_per_head / 100.0
+    other_revenue_per_head = float(params.get("other_revenue_per_head", 0.0))
+    sale_price_per_lb = float(params["base_price"]) / 100.0
+    sale_revenue_per_head = pounds_per_head * sale_price_per_lb
+    gross_revenue_per_head = sale_revenue_per_head + other_revenue_per_head
+
+    costs = params.get("livestock_costs") or {
+        "Production cost": float(params["cost_per_unit"])
+        * sold_cwt_per_head
+    }
+    total_cost_per_head = float(sum(float(value) for value in costs.values()))
+    margin_per_head = gross_revenue_per_head - total_cost_per_head
+    break_even_price_per_lb = (
+        (total_cost_per_head - other_revenue_per_head) / pounds_per_head
+        if pounds_per_head > 0
+        else None
     )
+    break_even_price_per_cwt = (
+        break_even_price_per_lb * 100.0
+        if break_even_price_per_lb is not None
+        else None
+    )
+    return {
+        "pounds_per_head": float(pounds_per_head),
+        "sold_cwt_per_head": float(sold_cwt_per_head),
+        "sale_price_per_lb": float(sale_price_per_lb),
+        "sale_revenue_per_head": float(sale_revenue_per_head),
+        "other_revenue_per_head": float(other_revenue_per_head),
+        "gross_revenue_per_head": float(gross_revenue_per_head),
+        "total_cost_per_head": float(total_cost_per_head),
+        "margin_per_head": float(margin_per_head),
+        "annual_margin": float(margin_per_head * params["head"]),
+        "break_even_price_per_lb": (
+            float(break_even_price_per_lb)
+            if break_even_price_per_lb is not None
+            else None
+        ),
+        "break_even_price_per_cwt": (
+            float(break_even_price_per_cwt)
+            if break_even_price_per_cwt is not None
+            else None
+        ),
+        "cost_per_pound": (
+            float(total_cost_per_head / pounds_per_head)
+            if pounds_per_head > 0
+            else None
+        ),
+        "acres_per_head": (
+            float(params.get("grazing_acres", 0.0) / params["head"])
+            if params["head"]
+            else None
+        ),
+    }
 
 
 def lrp_scenario_values(
@@ -562,11 +639,28 @@ def lrp_scenario_values(
     if params["kind"] != "livestock":
         raise ValueError("The LRP module is currently available for livestock only.")
 
-    quantity_cwt = params["head"] * params["weight_per_head"] / 100.0
+    quantity_cwt = (
+        params["head"]
+        * params["weight_per_head"]
+        / 100.0
+        * float(params.get("production_rate", 100.0))
+        / 100.0
+    )
     coverage_share = params["hedge_ratio"]
     coverage_price = params["strike"]
     premium = params["premium"]
-    cash_net_price = ending_value + params["basis"] - params["storage"]
+    other_revenue_per_cwt = (
+        float(params.get("other_revenue_per_head", 0.0))
+        / (params["weight_per_head"] * float(params.get("production_rate", 100.0)) / 10000.0)
+        if params["weight_per_head"] > 0 and float(params.get("production_rate", 100.0)) > 0
+        else 0.0
+    )
+    cash_net_price = (
+        ending_value
+        + params["basis"]
+        - params["storage"]
+        + other_revenue_per_cwt
+    )
     indemnity_per_covered_cwt = max(coverage_price - ending_value, 0.0)
     indemnity_per_operation_cwt = coverage_share * indemnity_per_covered_cwt
     premium_per_operation_cwt = coverage_share * premium
@@ -652,16 +746,29 @@ def lrp_break_even_summary(params: dict[str, Any]) -> dict[str, float | None]:
     if params["kind"] != "livestock":
         raise ValueError("The LRP module is currently available for livestock only.")
 
-    operating_be_cash = params["cost_per_unit"]
+    other_revenue_per_cwt = (
+        float(params.get("other_revenue_per_head", 0.0))
+        / (params["weight_per_head"] * float(params.get("production_rate", 100.0)) / 10000.0)
+        if params["weight_per_head"] > 0 and float(params.get("production_rate", 100.0)) > 0
+        else 0.0
+    )
+    operating_be_cash = params["cost_per_unit"] - other_revenue_per_cwt
     operating_be_ending_value = (
-        params["cost_per_unit"] - params["basis"] + params["storage"]
+        params["cost_per_unit"]
+        - other_revenue_per_cwt
+        - params["basis"]
+        + params["storage"]
     )
     coverage_price = params["strike"]
     premium = params["premium"]
     coverage_share = params["hedge_ratio"]
 
     modeled_full_coverage_net_price = (
-        coverage_price + params["basis"] - params["storage"] - premium
+        coverage_price
+        + params["basis"]
+        - params["storage"]
+        + other_revenue_per_cwt
+        - premium
     )
     modeled_full_coverage_profit = (
         modeled_full_coverage_net_price - params["cost_per_unit"]
@@ -679,6 +786,7 @@ def lrp_break_even_summary(params: dict[str, Any]) -> dict[str, float | None]:
         params["cost_per_unit"]
         - params["basis"]
         + params["storage"]
+        - other_revenue_per_cwt
         + coverage_share * premium
     )
     if coverage_share <= 0:
@@ -698,6 +806,7 @@ def lrp_break_even_summary(params: dict[str, Any]) -> dict[str, float | None]:
             coverage_price
             + params["basis"]
             - params["storage"]
+            + other_revenue_per_cwt
             - premium
             - params["cost_per_unit"]
         )
