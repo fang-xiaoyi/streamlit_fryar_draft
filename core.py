@@ -129,6 +129,78 @@ COMMODITY_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
+# Auburn-style benchmark context for the livestock decision screen.  The first
+# reference is transcribed from the user's Producer Margin Check prototype.  It
+# is intentionally labelled as context: an Alabama cow-calf enterprise budget
+# is not the same enterprise as fed cattle or hog finishing.  The editable
+# regional/national rows give Extension staff a visible place to insert an
+# approved benchmark series when the data partnership is established.
+LIVESTOCK_BENCHMARKS: dict[str, list[dict[str, Any]]] = {
+    "Fed Cattle": [
+        {
+            "key": "auburn-aces-cow-calf-context",
+            "name": "Auburn-style Alabama cow-calf case (context)",
+            "break_even_price": 191.94,
+            "scope": "ACES 2022 cow-calf case; $1.92/lb converted to $/cwt",
+            "source": "https://www.aces.edu/blog/topics/farm-management/south-alabama-cow-calf-enterprise-cost-study/",
+            "note": "Use as an Auburn-style teaching reference, not as a directly comparable fed-cattle finishing budget.",
+        },
+        {
+            "key": "regional-editable-fed-cattle",
+            "name": "Regional representative farm (editable)",
+            "break_even_price": None,
+            "scope": "Enter an approved regional fed-cattle budget",
+            "source": "",
+            "note": "Placeholder for a Fryar/Extension representative-farm benchmark.",
+        },
+        {
+            "key": "usda-editable-fed-cattle",
+            "name": "USDA / national context (editable)",
+            "break_even_price": None,
+            "scope": "Enter an approved USDA or national cost series",
+            "source": "https://www.ers.usda.gov/topics/animal-products/cattle-beef/",
+            "note": "National cost definitions may not match an individual operation; keep the source year visible.",
+        },
+    ],
+    "Hogs": [
+        {
+            "key": "regional-editable-hogs",
+            "name": "Regional representative hog farm (editable)",
+            "break_even_price": None,
+            "scope": "Enter an approved regional hog budget",
+            "source": "",
+            "note": "Placeholder for a Fryar/Extension representative-farm benchmark.",
+        },
+        {
+            "key": "usda-editable-hogs",
+            "name": "USDA / national context (editable)",
+            "break_even_price": None,
+            "scope": "Enter an approved USDA or national cost series",
+            "source": "https://www.ers.usda.gov/topics/animal-products/pork/",
+            "note": "National cost definitions may not match an individual operation; keep the source year visible.",
+        },
+    ],
+}
+
+
+def livestock_benchmark_options(commodity: str) -> list[dict[str, Any]]:
+    """Return benchmark choices for the Auburn-style livestock layer."""
+
+    return LIVESTOCK_BENCHMARKS.get(
+        commodity,
+        [
+            {
+                "key": "regional-editable",
+                "name": "Regional / USDA benchmark (editable)",
+                "break_even_price": None,
+                "scope": "Enter an approved benchmark",
+                "source": "",
+                "note": "The benchmark should match the commodity, enterprise, region, and source year.",
+            }
+        ],
+    )
+
+
 def strategy_options(kind: str) -> list[str]:
     """Return strategies that make sense for a producer-facing draft."""
 
@@ -541,6 +613,33 @@ def lrp_profit_curve(
     return curve.rename(columns={"ending_value": "Ending value"})
 
 
+def lrp_coverage_grid(
+    params: dict[str, Any], ending_value: float,
+    shares: tuple[float, ...] = (0.25, 0.50, 0.75, 1.00),
+) -> pd.DataFrame:
+    """Compare the same LRP quote at alternative covered-head shares."""
+
+    if params["kind"] != "livestock":
+        raise ValueError("The LRP coverage grid is currently available for livestock only.")
+
+    rows: list[dict[str, float | str]] = []
+    for share in shares:
+        scenario_params = dict(params)
+        scenario_params["hedge_ratio"] = float(share)
+        scenario = lrp_scenario_values(scenario_params, ending_value)
+        rows.append(
+            {
+                "Covered share": f"{share:.0%}",
+                "Covered head": float(params["head"] * share),
+                "Producer premium": scenario["total_premium"],
+                "Indemnity at selected value": scenario["total_indemnity"],
+                "Net price at selected value": scenario["lrp_net_price"],
+                "Profit / cwt": scenario["lrp_profit_per_cwt"],
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def lrp_break_even_summary(params: dict[str, Any]) -> dict[str, float | None]:
     """Summarize operating and modeled LRP break-even information.
 
@@ -572,14 +671,57 @@ def lrp_break_even_summary(params: dict[str, Any]) -> dict[str, float | None]:
     no_lrp_crossings = curve.loc[curve["no_lrp_profit_per_cwt"] >= 0, "Ending value"]
     lrp_crossings = curve.loc[curve["lrp_profit_per_cwt"] >= 0, "Ending value"]
 
+    # Solve the piecewise LRP break-even analytically.  Below the coverage
+    # price, the covered share receives an indemnity; above it, the operation
+    # pays the premium but receives no indemnity.  This makes the displayed
+    # break-even price respond directly to the producer's chosen coverage share.
+    constant = (
+        params["cost_per_unit"]
+        - params["basis"]
+        + params["storage"]
+        + coverage_share * premium
+    )
+    if coverage_share <= 0:
+        lrp_adjusted_be = operating_break_even_ending_value
+    elif coverage_share < 1:
+        low_price_solution = (
+            constant - coverage_share * coverage_price
+        ) / (1.0 - coverage_share)
+        high_price_solution = constant
+        lrp_adjusted_be = (
+            float(low_price_solution)
+            if low_price_solution < coverage_price
+            else float(high_price_solution)
+        )
+    else:
+        protected_floor_profit = (
+            coverage_price
+            + params["basis"]
+            - params["storage"]
+            - premium
+            - params["cost_per_unit"]
+        )
+        lrp_adjusted_be = None if protected_floor_profit >= 0 else float(constant)
+
     return {
         "operating_break_even_cash_price": float(operating_be_cash),
         "operating_break_even_ending_value": float(operating_be_ending_value),
         "coverage_price": float(coverage_price),
         "premium_per_covered_cwt": float(premium),
         "coverage_share": float(coverage_share),
+        "covered_head": float(params["head"] * coverage_share),
+        "coverage_level": float(params.get("lrp_coverage_level", np.nan)),
         "modeled_full_coverage_net_price": float(modeled_full_coverage_net_price),
         "modeled_full_coverage_profit_per_cwt": float(modeled_full_coverage_profit),
+        "lrp_adjusted_break_even_ending_value": lrp_adjusted_be,
+        "coverage_price_minus_operating_be": float(
+            coverage_price - operating_be_ending_value
+        ),
+        "coverage_price_minus_lrp_be": (
+            float(coverage_price - lrp_adjusted_be)
+            if lrp_adjusted_be is not None
+            else None
+        ),
         "no_lrp_break_even_ending_value": (
             float(no_lrp_crossings.iloc[0]) if not no_lrp_crossings.empty else None
         ),

@@ -24,9 +24,11 @@ from audience_poll import (
 )
 from core import (
     COMMODITY_DEFAULTS,
+    lrp_coverage_grid,
     lrp_break_even_summary,
     lrp_profit_curve,
     lrp_scenario_values,
+    livestock_benchmark_options,
     payoff_curve,
     simulate_poultry_feed_strategies,
     simulate_strategies,
@@ -81,6 +83,17 @@ st.markdown(
         color: #6b3f00;
         margin: .7rem 0 1rem 0;
     }
+    .auburn-cover {
+        padding: 1.15rem 1.35rem;
+        border: 1px solid #ead3d7;
+        border-left: 7px solid #9e2b44;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #fff8f5 0%, #f7f9fb 100%);
+        margin: .8rem 0 1.1rem 0;
+    }
+    .auburn-cover .eyebrow {color: #9e2b44; font-size: .76rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase;}
+    .auburn-cover h2 {color: #243b53; margin: .2rem 0 .35rem 0;}
+    .auburn-cover p {color: #52606d; margin: 0; max-width: 920px;}
     div[data-testid="stMetric"] {background: #f8fafc; border: 1px solid #e6edf2; padding: .8rem; border-radius: 12px;}
     div[data-testid="stMetricLabel"] {font-size: .78rem;}
     [data-testid="stSidebar"] {background: #f5f8fa;}
@@ -525,6 +538,8 @@ with st.sidebar:
 
     rma_quote_df = None
     rma_quote_meta = None
+    rma_default_coverage_level = 0.95
+    rma_default_endorsement_weeks = 26
     if kind == "livestock":
         st.markdown("#### Official RMA LRP quote")
         rma_commodity_code = RMA_LRP_COMMODITY_CODES.get(commodity, "")
@@ -600,11 +615,14 @@ with st.sidebar:
                     ),
                 )
                 rma_selected = rma_quote_df.iloc[int(rma_offer_index)]
+                rma_default_coverage_level = float(rma_selected.get("Coverage Level", 0.95))
+                rma_default_endorsement_weeks = int(rma_selected.get("Endorsement Length", 26))
                 rma_offer_key = (
                     f"{rma_state['retrieved_at']}|{rma_state['type_code']}|"
                     f"{rma_selected.get('End Date')}|"
                     f"{rma_selected.get('Coverage Level')}"
                 )
+                st.session_state[f"lrp_level_{commodity}"] = rma_default_coverage_level
                 if st.session_state.get(f"rma_applied_{commodity}") != rma_offer_key:
                     st.session_state[f"strike_{commodity}"] = float(
                         rma_selected["Coverage Price"]
@@ -632,13 +650,44 @@ with st.sidebar:
 
     st.markdown("#### Strategy assumptions")
     if kind == "livestock":
-        hedge_ratio = st.slider(
-            "LRP covered share",
-            0.0,
-            1.0,
-            0.50,
-            0.05,
-            help="Share of the expected sale quantity covered by the LRP scenario.",
+        st.caption(
+            "This is the Auburn-style decision step: choose how many animals to insure, "
+            "how much price coverage to buy, and how long the endorsement should run."
+        )
+        lrp_covered_head = st.number_input(
+            "LRP covered head",
+            min_value=0.0,
+            max_value=float(head),
+            value=float(round(head * 0.50)),
+            step=1.0,
+            key=f"lrp_head_{commodity}",
+            help="The covered head is converted into the covered share used in the LRP scenario.",
+        )
+        hedge_ratio = lrp_covered_head / head if head else 0.0
+        lrp_coverage_level = st.slider(
+            "LRP coverage level",
+            0.70,
+            1.00,
+            float(rma_default_coverage_level),
+            0.01,
+            key=f"lrp_level_{commodity}",
+            help="When a live RMA quote is loaded, the selected offer supplies the coverage price and premium.",
+        )
+        endorsement_options = [13, 17, 21, 26, 30, 34, 39, 43, 47, 52]
+        lrp_endorsement_weeks = st.selectbox(
+            "LRP endorsement length (weeks)",
+            endorsement_options,
+            index=(
+                endorsement_options.index(rma_default_endorsement_weeks)
+                if rma_default_endorsement_weeks in endorsement_options
+                else 3
+            ),
+            key=f"lrp_weeks_{commodity}",
+        )
+        st.caption(
+            f"Scenario coverage: {lrp_covered_head:,.0f} of {head:,.0f} head "
+            f"({hedge_ratio:.0%}) · {lrp_coverage_level:.0%} level · "
+            f"{lrp_endorsement_weeks} weeks"
         )
     else:
         hedge_ratio = st.slider("Planned hedge share", 0.0, 1.0, 0.50, 0.05)
@@ -660,13 +709,28 @@ with st.sidebar:
             if kind == "livestock"
             else "Protection level / coverage price"
         )
+        default_protection_price = (
+            float(base_price * lrp_coverage_level)
+            if kind == "livestock" and not rma_quote_meta
+            else float(defaults["strike"])
+        )
+        if kind == "livestock" and not rma_quote_meta:
+            previous_level = st.session_state.get(f"lrp_prev_level_{commodity}")
+            if previous_level != lrp_coverage_level:
+                st.session_state[f"strike_{commodity}"] = default_protection_price
+                st.session_state[f"lrp_prev_level_{commodity}"] = lrp_coverage_level
         strike = st.number_input(
             f"{protection_label} ({defaults['unit']})",
             min_value=0.01,
             max_value=1000.0,
-            value=float(defaults["strike"]),
+            value=default_protection_price,
             step=0.05,
             key=f"strike_{commodity}",
+            help=(
+                "With no live RMA quote, the starting coverage price is entry price × selected coverage level; edit it for a what-if scenario."
+                if kind == "livestock"
+                else None
+            ),
         )
         premium_label = "LRP producer premium" if kind == "livestock" else "Illustrative premium"
         premium = st.number_input(
@@ -701,6 +765,22 @@ with st.sidebar:
     )
     if not strategies:
         strategies = ["Unhedged feed cost" if kind == "poultry" else "Unhedged / wait"]
+
+if kind == "livestock":
+    cover_logo_col, cover_text_col = st.columns([1.2, 4.8])
+    with cover_logo_col:
+        st.image("Fryar-Center-logo.png", width=190)
+    with cover_text_col:
+        st.markdown(
+            """
+            <div class="auburn-cover">
+              <div class="eyebrow">Producer margin &amp; price-risk decision support</div>
+              <h2>Livestock Producer Margin Check</h2>
+              <p>Enter the operation's break-even economics, compare the result with an Extension or USDA benchmark, then test how the number of head and coverage level change the LRP decision.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 if kind == "poultry":
@@ -842,6 +922,9 @@ params = {
     "lrp_coverage_share": hedge_ratio if kind == "livestock" else 0.0,
     "lrp_coverage_price": strike if kind == "livestock" else 0.0,
     "lrp_premium": premium if kind == "livestock" else 0.0,
+    "lrp_covered_head": lrp_covered_head if kind == "livestock" else 0.0,
+    "lrp_coverage_level": lrp_coverage_level if kind == "livestock" else 0.0,
+    "lrp_endorsement_weeks": lrp_endorsement_weeks if kind == "livestock" else 0,
 }
 
 
@@ -945,6 +1028,46 @@ if kind == "livestock":
             )
 
         lrp_summary = lrp_break_even_summary(params)
+        benchmark_options = livestock_benchmark_options(commodity)
+        benchmark_names = [item["name"] for item in benchmark_options]
+        selected_benchmark_name = st.selectbox(
+            "Benchmark reference",
+            benchmark_names,
+            key=f"livestock_benchmark_{commodity}",
+            help="Use an Extension, USDA, or representative-farm benchmark with matching units and scope.",
+        )
+        selected_benchmark = next(
+            item for item in benchmark_options if item["name"] == selected_benchmark_name
+        )
+        benchmark_default = selected_benchmark.get("break_even_price")
+        benchmark_be_price = st.number_input(
+            "Benchmark break-even market price ($/cwt)",
+            min_value=0.01,
+            max_value=1000.0,
+            value=float(benchmark_default or lrp_summary["operating_break_even_ending_value"]),
+            step=0.25,
+            key=f"benchmark_be_{commodity}_{selected_benchmark['key']}",
+            help="Editable so a Fryar representative-farm or USDA series can be inserted without changing the formula layer.",
+        )
+        st.caption(
+            f"{selected_benchmark['scope']}. {selected_benchmark['note']}"
+            + (f" [Source]({selected_benchmark['source']})" if selected_benchmark.get("source") else "")
+        )
+        benchmark_gap = lrp_summary["operating_break_even_ending_value"] - benchmark_be_price
+        benchmark_cols = st.columns(3)
+        benchmark_cols[0].metric(
+            "Your operating BE",
+            f"{money(lrp_summary['operating_break_even_ending_value'])}/cwt",
+            "market value before LRP",
+        )
+        benchmark_cols[1].metric("Selected benchmark BE", f"{money(benchmark_be_price)}/cwt")
+        benchmark_cols[2].metric(
+            "BE gap vs benchmark",
+            f"{money(benchmark_gap)}/cwt",
+            "higher cost" if benchmark_gap > 0 else "lower cost",
+            delta_color="inverse" if benchmark_gap > 0 else "normal",
+        )
+
         reference_value = st.slider(
             "Check a possible LRP ending value ($/cwt)",
             min_value=max(0.01, min(base_price, strike) * 0.50),
@@ -957,24 +1080,47 @@ if kind == "livestock":
 
         metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
         metric_col1.metric(
-            "Operating BE cash price",
-            money(lrp_summary["operating_break_even_cash_price"]),
-            "$/cwt",
-        )
-        metric_col2.metric(
             "LRP coverage price",
-            money(lrp_summary["coverage_price"]),
+            f"{money(lrp_summary['coverage_price'])}/cwt",
             f"{lrp_summary['coverage_share']:.0%} covered",
         )
+        metric_col2.metric(
+            "LRP-adjusted BE",
+            (
+                "Protected below floor"
+                if lrp_summary["lrp_adjusted_break_even_ending_value"] is None
+                else f"{money(lrp_summary['lrp_adjusted_break_even_ending_value'])}/cwt"
+            ),
+            f"{lrp_endorsement_weeks} weeks",
+        )
         metric_col3.metric(
+            "LRP covered head",
+            f"{lrp_summary['covered_head']:,.0f}",
+            f"{lrp_summary['coverage_level']:.0%} level",
+        )
+        metric_col4.metric(
             "LRP premium",
             money(scenario["total_premium"]),
             f"{money(scenario['premium_per_operation_cwt'])}/cwt",
         )
-        metric_col4.metric(
-            "Modeled LRP profit",
-            money(scenario["lrp_total_profit"]),
-            "at selected ending value",
+        st.metric("Modeled LRP profit at selected ending value", money(scenario["lrp_total_profit"]))
+
+        st.markdown("#### Choose how much to cover")
+        coverage_grid = lrp_coverage_grid(params, reference_value).copy()
+        for column in [
+            "Producer premium",
+            "Indemnity at selected value",
+            "Net price at selected value",
+            "Profit / cwt",
+        ]:
+            coverage_grid[column] = coverage_grid[column].map(lambda value: money(float(value)))
+        coverage_grid["Covered head"] = coverage_grid["Covered head"].map(
+            lambda value: f"{value:,.0f}"
+        )
+        st.dataframe(coverage_grid, width="stretch", hide_index=True)
+        st.caption(
+            "This table holds the selected coverage price, premium, ending value, and endorsement length constant, "
+            "then shows how the number of insured head changes the premium, indemnity, and modeled profit."
         )
 
         compare_col, explanation_col = st.columns([1.65, 1])
@@ -1047,8 +1193,13 @@ if kind == "livestock":
                     "Measure": [
                         "Operating break-even cash price",
                         "Break-even market ending value before LRP",
+                        "Selected benchmark break-even",
+                        "LRP-adjusted break-even market value",
                         "LRP coverage price",
                         "Covered share",
+                        "Covered head",
+                        "Coverage level",
+                        "Endorsement length",
                         "Producer premium per covered cwt",
                         "Modeled full-coverage net price after premium",
                         "Modeled full-coverage profit per cwt",
@@ -1056,8 +1207,17 @@ if kind == "livestock":
                     "Value": [
                         f"{money(lrp_summary['operating_break_even_cash_price'])}/cwt",
                         f"{money(lrp_summary['operating_break_even_ending_value'])}/cwt",
+                        f"{money(benchmark_be_price)}/cwt",
+                        (
+                            "Protected below coverage price"
+                            if lrp_summary["lrp_adjusted_break_even_ending_value"] is None
+                            else f"{money(lrp_summary['lrp_adjusted_break_even_ending_value'])}/cwt"
+                        ),
                         f"{money(lrp_summary['coverage_price'])}/cwt",
                         f"{lrp_summary['coverage_share']:.0%}",
+                        f"{lrp_summary['covered_head']:,.0f} head",
+                        f"{lrp_summary['coverage_level']:.0%}",
+                        f"{lrp_endorsement_weeks} weeks",
                         f"{money(lrp_summary['premium_per_covered_cwt'])}/cwt",
                         f"{money(lrp_summary['modeled_full_coverage_net_price'])}/cwt",
                         f"{money(lrp_summary['modeled_full_coverage_profit_per_cwt'])}/cwt",
@@ -1126,32 +1286,78 @@ with tab1:
         )
 
 with tab2:
-    st.markdown("### Terminal-price payoff view")
+    st.markdown("### How terminal market price becomes producer result")
+    st.caption(
+        "Read the chart from left to right: the x-axis is the market price at sale; "
+        "the y-axis is the net price received after basis, storage, and the selected hedge or insurance cost. "
+        "The green line is the selected strategy; the gray line is waiting with no protection."
+    )
     selected_strategy = st.selectbox("Show payoff curve for", strategies)
     curve = payoff_curve(selected_strategy, params)
+    unhedged_curve = payoff_curve("Unhedged / wait", params)
+    break_even_net_price = (
+        params["cost_per_unit"]
+        if kind == "livestock"
+        else params["cost_per_acre"] / params["yield_per_acre"]
+    )
+    selected_at_entry = curve.iloc[(curve["Terminal price"] - base_price).abs().idxmin()]
+    payoff_cols = st.columns(3)
+    payoff_cols[0].metric("Net price at entry", money(float(selected_at_entry["Net price"])))
+    payoff_cols[1].metric("Price needed to cover cost", money(float(break_even_net_price)))
+    payoff_cols[2].metric(
+        "Selected strategy at entry",
+        money(float(selected_at_entry["Margin"])),
+        "margin / acre" if kind == "crop" else "margin / cwt",
+    )
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
             x=curve["Terminal price"],
-            y=curve["Margin"],
+            y=curve["Net price"],
             mode="lines",
             name=selected_strategy,
             line=dict(color="#1f7a5c", width=4),
         )
     )
+    fig.add_trace(
+        go.Scatter(
+            x=unhedged_curve["Terminal price"],
+            y=unhedged_curve["Net price"],
+            mode="lines",
+            name="Unhedged / wait",
+            line=dict(color="#94a3b8", width=2, dash="dot"),
+        )
+    )
     fig.add_vline(x=base_price, line_dash="dash", line_color="#52606d", annotation_text="Entry price")
-    fig.add_hline(y=0, line_color="#d64545", line_width=1)
+    fig.add_hline(
+        y=break_even_net_price,
+        line_dash="dot",
+        line_color="#d64545",
+        line_width=2,
+        annotation_text="Break-even net price",
+    )
+    if kind == "livestock":
+        fig.add_vline(
+            x=strike,
+            line_dash="dash",
+            line_color="#d97706",
+            annotation_text="LRP coverage price",
+        )
     fig.update_layout(
-        title=f"How {selected_strategy.lower()} changes margin as terminal price changes",
+        title=f"{selected_strategy}: terminal price → net price received",
         xaxis_title=f"Terminal price ({defaults['unit']})",
-        yaxis_title="Margin per acre" if kind == "crop" else "Margin per cwt",
+        yaxis_title=f"Net price received ({defaults['unit']})",
         height=500,
         template="plotly_white",
+        hovermode="x unified",
         margin=dict(l=10, r=10, t=55, b=10),
     )
     st.plotly_chart(fig, width="stretch")
-    st.caption(
-        "This curve uses expected production and isolates the price-risk channel. The distribution chart above additionally allows production or quantity risk."
+    st.markdown(
+        "**How to read it:** move right to ask what happens at a higher terminal price; "
+        "the vertical distance between the green and gray lines is the modeled value of protection; "
+        "the red line is the net price required to cover the modeled operating cost. "
+        "This is a price-risk teaching view, not a guaranteed profit curve."
     )
 
 with tab3:

@@ -7,6 +7,7 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 - scenario-based decision support for crop and livestock producers;
 - comparison of cash sale, unhedged/wait, futures hedge, staged hedge, Put, and LRP-style floor strategies;
 - a dedicated livestock LRP decision tab comparing no LRP versus buying LRP, including coverage share, premium, indemnity, modeled break-even, profit, and residual-risk interpretation;
+- an Auburn-style livestock margin layer with operating and LRP-adjusted break-even prices, editable regional/USDA benchmark context, and a covered-head scenario grid;
 - an optional live USDA RMA LRP quote workflow that loads the official coverage price, coverage level, endorsement length, end date, and producer premium, then pre-fills the transparent scenario model;
 - price, production/quantity, basis, storage, hedge-share, target-price, and protection-cost inputs;
 - expected, P10, P50, and P90 net-price outcomes;
@@ -15,6 +16,13 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 - a Rice case as an additional crop market;
 - a planned poultry feed-cost extension that passes corn and soybean-meal price risk through a ration into poultry margins;
 - a pathway to connect the product to Fryar's broader tools and monthly USDA/WASDE information.
+
+For livestock, the interface follows the user's Auburn interview prototype: operation
+economics first, then break-even and benchmark context, then the producer chooses
+covered head, coverage level, endorsement length, and compares LRP with cash sale,
+wait, futures, staged hedge, or put/floor strategies. The terminal-price view is
+shown as a price-to-net-price bridge with an explicit break-even line rather than as
+an unlabeled payoff curve.
 
 The draft now includes three demonstrable tools in one Streamlit toolbox:
 
