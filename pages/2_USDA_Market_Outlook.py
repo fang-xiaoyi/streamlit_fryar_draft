@@ -13,12 +13,65 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from history_store import (
-    COMMODITY_CATALOG,
     build_case,
     case_records,
     format_snapshot_option,
     latest_snapshot,
 )
+
+# Keep the page resilient during a Streamlit Cloud hot reload.  A long-lived
+# process can temporarily retain an older ``history_store`` module while the
+# page file has already been refreshed, so the UI catalog has a local fallback.
+try:
+    from history_store import COMMODITY_CATALOG
+except ImportError:
+    COMMODITY_CATALOG = {
+        "corn": {
+            "label": "Corn — WASDE",
+            "status": "validated",
+            "source_family": "USDA WASDE",
+        },
+        "cattle": {
+            "label": "Cattle — Cattle on Feed",
+            "status": "validated",
+            "source_family": "USDA Cattle on Feed",
+        },
+        "soybeans": {
+            "label": "Soybeans — WASDE (planned)",
+            "status": "planned",
+            "source_family": "USDA WASDE",
+        },
+        "wheat": {
+            "label": "Wheat — WASDE (planned)",
+            "status": "planned",
+            "source_family": "USDA WASDE",
+        },
+        "cotton": {
+            "label": "Cotton — WASDE (planned)",
+            "status": "planned",
+            "source_family": "USDA WASDE",
+        },
+        "rice": {
+            "label": "Rice — WASDE (planned)",
+            "status": "planned",
+            "source_family": "USDA WASDE",
+        },
+        "hogs": {
+            "label": "Hogs — Hogs and Pigs (planned)",
+            "status": "planned",
+            "source_family": "USDA NASS Hogs and Pigs",
+        },
+        "broilers": {
+            "label": "Broilers — poultry outlook (planned)",
+            "status": "planned",
+            "source_family": "USDA poultry reports",
+        },
+        "milk": {
+            "label": "Milk — Milk Production (planned)",
+            "status": "planned",
+            "source_family": "USDA NASS Milk Production",
+        },
+    }
 from usda_report_pipeline import (
     TEMPLATE_SHELLS,
     branded_fact_sheet_html,
