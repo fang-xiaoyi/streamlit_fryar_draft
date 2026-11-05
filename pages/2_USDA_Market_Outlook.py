@@ -1,15 +1,23 @@
-"""Fryar USDA release and price-outlook monitor.
+"""USDA release monitor and auto-generated extension-style report."""
 
-This page is intentionally transparent and manual-input first. It demonstrates
-the report logic without pretending that Bloomberg, CME, or Barchart data are
-available or licensed in the local prototype.
-"""
+from __future__ import annotations
 
-from math import exp, sqrt
+from datetime import date
 
-import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+from usda_report_pipeline import (
+    CASES,
+    TEMPLATE_SHELLS,
+    check_source,
+    comparison_frame,
+    generated_report,
+    get_case,
+    metrics_for,
+    next_release_status,
+    yoy_frame,
+)
 
 
 st.set_page_config(
@@ -19,150 +27,184 @@ st.set_page_config(
 )
 
 
-def price_range(center: float, annual_iv_pct: float, horizon_days: int) -> tuple[float, float, float]:
-    """Return illustrative low/middle/high prices from annualized IV."""
-
-    sigma = max(0.0, annual_iv_pct) / 100.0 * sqrt(max(horizon_days, 1) / 365.0)
-    low = center * exp(-1.2816 * sigma)
-    high = center * exp(1.2816 * sigma)
-    return low, center, high
+def signed(value: float, decimals: int = 0) -> str:
+    return f"{value:+,.{decimals}f}"
 
 
-st.title("Fryar USDA Release & Price Outlook Monitor")
+@st.cache_data(ttl=3600, show_spinner=False)
+def cached_source_check(url: str) -> dict:
+    return check_source(url)
+
+
+st.title("Fryar USDA Release & Decision Report")
 st.caption(
-    "Tool 2 of the interview toolbox · transparent release-to-price workflow · "
-    "illustrative inputs until Center data access and licensing are confirmed"
+    "Tool 2 · official USDA snapshot → transparent formulas → extension-style report → producer decision cue"
 )
 
 
 with st.sidebar:
-    st.header("Release snapshot")
-    commodity = st.selectbox("Commodity", ["Corn", "Soybeans", "Wheat", "Rice", "Live cattle", "Hogs"])
-    report = st.selectbox("USDA report", ["WASDE", "Grain Stocks", "Cattle on Feed"])
-    previous_stocks = st.number_input("Previous ending stocks", min_value=0.0, value=1820.0, step=25.0)
-    new_stocks = st.number_input("New USDA ending stocks", min_value=0.0, value=1950.0, step=25.0)
-    consensus_stocks = st.number_input("Pre-release expectation", min_value=0.0, value=1880.0, step=25.0)
-    use = st.number_input("Annual use / denominator", min_value=1.0, value=14500.0, step=100.0)
-    futures_price = st.number_input("Current futures price", min_value=0.0, value=4.35, step=0.05)
-    implied_vol = st.number_input("Annualized implied volatility (%)", min_value=0.0, value=24.0, step=1.0)
-    horizon_days = st.slider("Forecast horizon (days)", min_value=15, max_value=365, value=90, step=15)
-    sensitivity = st.slider(
-        "Illustrative stocks-surprise price sensitivity",
-        min_value=0.0,
-        max_value=3.0,
-        value=1.0,
-        step=0.1,
-        help="A transparent teaching parameter, not an estimated structural coefficient.",
+    st.header("Choose the real case")
+    case_key = st.selectbox(
+        "Commodity / release",
+        options=list(CASES),
+        format_func=lambda key: "Corn — WASDE" if key == "corn" else "Cattle — Cattle on Feed",
     )
-
+    case = get_case(case_key)
     st.divider()
-    st.subheader("Event-window check")
-    pre_release = st.number_input("Pre-release futures", min_value=0.0, value=float(futures_price), step=0.05)
-    post_release = st.number_input("Post-release futures", min_value=0.0, value=float(futures_price), step=0.05)
-    pre_spread = st.number_input("Pre-release calendar spread", value=0.00, step=0.01, format="%.2f")
-    post_spread = st.number_input("Post-release calendar spread", value=0.00, step=0.01, format="%.2f")
+    st.subheader("Pipeline target")
+    st.write(f"Current snapshot: **{case.current_label}**")
+    st.write(f"Next target: **{case.next_release_label}**")
+    st.caption(f"Scheduled date: {case.next_release_date}")
 
 
-previous_stu = previous_stocks / use * 100.0
-new_stu = new_stocks / use * 100.0
-surprise = new_stocks - consensus_stocks
-surprise_pct_use = surprise / use * 100.0
-
-# Higher ending stocks are treated as a bearish directional adjustment. The
-# sensitivity is deliberately visible so a future version can replace it with
-# a calibrated/event-study estimate without changing the interface.
-directional_adjustment = max(0.25, 1.0 - sensitivity * surprise_pct_use / 100.0)
-adjusted_mid = futures_price * directional_adjustment
-low, middle, high = price_range(adjusted_mid, implied_vol, horizon_days)
-
-direction = "bearish" if surprise > 0 else "bullish" if surprise < 0 else "neutral"
-futures_move_pct = (post_release / pre_release - 1.0) * 100.0 if pre_release else 0.0
-spread_move = post_spread - pre_spread
-
-metric_cols = st.columns(5)
-metric_cols[0].metric("Stocks-to-use", f"{new_stu:.1f}%", f"{new_stu - previous_stu:+.1f} pp")
-metric_cols[1].metric("Surprise vs expectation", f"{surprise:+,.0f}", f"{surprise_pct_use:+.2f}% of use")
-metric_cols[2].metric("Directional read", direction.title())
-metric_cols[3].metric("Scenario middle", f"{middle:.2f}")
-metric_cols[4].metric("Low–high range", f"{low:.2f} – {high:.2f}")
-
-
-left, right = st.columns([1.2, 1.0])
-with left:
-    st.subheader("Scenario range")
-    scenario_df = pd.DataFrame(
-        {
-            "Scenario": ["Low", "Middle", "High"],
-            "Price": [low, middle, high],
-            "Construction": [
-                "Adjusted middle × lower IV tail",
-                "Futures price × transparent surprise adjustment",
-                "Adjusted middle × upper IV tail",
-            ],
-        }
+status = next_release_status(case, today=date.today())
+if status["released"]:
+    st.success(
+        f"{status['label']} is now expected to be available. Click the source check below, "
+        "then replace the snapshot after the official file is parsed."
     )
+else:
+    st.info(
+        f"Case uses the latest completed releases: {case.current_label} versus {case.previous_label}. "
+        f"{status['label']} is scheduled for {status['date']} ({status['days_until']} days from the app date). "
+        "The app does not invent a November estimate."
+    )
+
+
+st.subheader("1. Big picture")
+big_left, big_right = st.columns([1.45, 1.0])
+with big_left:
+    st.markdown(f"### {case.commodity}: what changed and why it matters")
+    st.write(generated_report(case))
+    st.caption(case.note)
+
+with big_right:
+    if case.key == "corn":
+        metrics = metrics_for(case)
+        cards = st.columns(2)
+        cards[0].metric("Ending stocks", f"{case.current['ending_stocks']:,} M bu", signed(metrics["ending_change"], 0))
+        cards[1].metric("Stocks / use", f"{metrics['current_stu']:.1f}%", f"{metrics['stu_change_pp']:+.1f} pp")
+        cards[0].metric("Production", f"{case.current['production']:,} M bu", signed(metrics["production_change"], 0))
+        cards[1].metric("USDA farm price", f"${case.current['farm_price']:.2f}/bu", f"{metrics['price_change']:+.2f}")
+    else:
+        metrics = metrics_for(case)
+        cards = st.columns(2)
+        cards[0].metric("Oct 1 inventory", f"{case.current['inventory']:,}k head", signed(metrics["inventory_change"], 0))
+        cards[1].metric("Sep placements", f"{case.current['placements']:,}k", f"{metrics['placements_yoy_delta']:+.0f} pp y/y")
+        cards[0].metric("Sep marketings", f"{case.current['marketings']:,}k", f"{metrics['marketings_yoy_delta']:+.0f} pp y/y")
+        cards[1].metric("Other disappearance", f"{case.current['other_disappearance']:,}k", f"{metrics['other_disappearance_yoy_delta']:+.0f} pp y/y")
+
+
+st.divider()
+st.subheader("2. Detailed movement")
+comparison = comparison_frame(case)
+detail_left, detail_right = st.columns([1.1, 1.0])
+with detail_left:
+    st.dataframe(comparison, width="stretch", hide_index=True)
+with detail_right:
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
-            x=scenario_df["Scenario"],
-            y=scenario_df["Price"],
-            marker_color=["#B45309", "#0F766E", "#1D4ED8"],
-            text=[f"{value:.2f}" for value in scenario_df["Price"]],
-            textposition="outside",
+            name=case.previous_label,
+            x=comparison["Measure"],
+            y=comparison[case.previous_label],
+            marker_color="#CBD5E1",
         )
     )
-    fig.update_layout(height=360, yaxis_title="Price", margin=dict(l=20, r=20, t=20, b=20), showlegend=False)
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(scenario_df, use_container_width=True, hide_index=True)
-
-with right:
-    st.subheader("Release-day market response")
-    response_df = pd.DataFrame(
-        {
-            "Measure": ["Futures move", "Calendar spread move", "Stocks-to-use change"],
-            "Value": [f"{futures_move_pct:+.2f}%", f"{spread_move:+.2f}", f"{new_stu - previous_stu:+.2f} pp"],
-            "Interpretation": [
-                "Observed event-window move from entered prices",
-                "Observed change in entered calendar spread",
-                "New USDA balance-sheet tightness signal",
-            ],
-        }
+    fig.add_trace(
+        go.Bar(
+            name=case.current_label,
+            x=comparison["Measure"],
+            y=comparison[case.current_label],
+            marker_color="#0F766E",
+        )
     )
-    st.dataframe(response_df, use_container_width=True, hide_index=True)
+    fig.update_layout(
+        barmode="group",
+        height=340,
+        margin=dict(l=20, r=20, t=20, b=70),
+        yaxis_title="Reported quantity",
+        legend=dict(orientation="h", y=1.12),
+    )
+    st.plotly_chart(fig, width="stretch")
 
-    st.subheader("One-paragraph interpretation")
-    if direction == "bearish":
-        read = "The new estimate is above the pre-release expectation, which is a bearish supply/demand surprise under this teaching model."
-    elif direction == "bullish":
-        read = "The new estimate is below the pre-release expectation, which is a bullish supply/demand surprise under this teaching model."
-    else:
-        read = "The new estimate matches the pre-release expectation, so the balance-sheet surprise is neutral under this teaching model."
-    st.info(
-        f"For {commodity} {report}, {read} The implied-volatility range is centered at "
-        f"{middle:.2f} and spans {low:.2f}–{high:.2f} over {horizon_days} days. "
-        "A production version would replace the transparent sensitivity with a documented, backtested model and would pass this scenario snapshot to the hedging tool."
+if case.key == "cattle":
+    st.markdown("#### Year-over-year read in the October release")
+    st.dataframe(yoy_frame(case), width="stretch", hide_index=True)
+else:
+    st.markdown("#### Balance-sheet formula")
+    st.code(
+        "stocks_to_use = ending_stocks / total_use\n"
+        "ending_stock_change = October_ending_stocks - September_ending_stocks\n"
+        "price_signal = read together with production, use, and stocks_to_use",
+        language="text",
     )
 
 
 st.divider()
-st.subheader("Data and publication gate")
+st.subheader("3. Report template → auto-filled report")
+template_col, report_col = st.columns([1.0, 1.2])
+with template_col:
+    st.markdown("#### Blank template used by the pipeline")
+    st.code(TEMPLATE_SHELLS[case.key], language="text")
+    st.caption(
+        "The blank tokens make the workflow auditable: the sentence structure is stable, "
+        "while direction and magnitude are generated from the data rather than hand-written."
+    )
+with report_col:
+    st.markdown("#### Auto-generated extension-style report")
+    st.info(generated_report(case))
+    report_markdown = (
+        f"# {case.commodity} USDA release report\n\n"
+        f"**Current release:** {case.current_label}  \n"
+        f"**Previous release:** {case.previous_label}\n\n"
+        f"{generated_report(case)}\n\n"
+        f"## Data note\n{case.note}\n\n"
+        "## Official sources\n"
+        + "\n".join(f"- [{label}]({url})" for label, url in case.sources)
+    )
+    st.download_button(
+        "Download report (.md)",
+        data=report_markdown.encode("utf-8"),
+        file_name=f"{case.key}_usda_release_report.md",
+        mime="text/markdown",
+    )
+
+
+st.divider()
+st.subheader("4. Pipeline readiness and source check")
+st.write(
+    "The production workflow is: scheduled USDA download → parse into a normalized snapshot → "
+    "validate units and release date → calculate formulas → generate report → human review → publish."
+)
+check_col, source_col = st.columns([1.0, 1.4])
+with check_col:
+    if st.button("Check official source now", type="secondary"):
+        st.session_state["source_check"] = cached_source_check(status["url"])
+with source_col:
+    result = st.session_state.get("source_check")
+    if result:
+        if result["ok"]:
+            st.success(f"Reachable · HTTP {result['status_code']} · checked {result['checked_at']}")
+        else:
+            st.warning(result["message"])
+    st.markdown(f"Next official source: [{status['url']}]({status['url']})")
+
+st.markdown("#### Data governance gate")
 st.warning(
-    "This page is deliberately manual-input first. Before public deployment, the Center should confirm USDA vintage handling, Bloomberg consensus access/display rights, futures/options/IV licensing, and who owns the scheduled refresh and human sign-off."
+    "Before public deployment, confirm USDA vintage handling, any licensed consensus/market-data access, "
+    "the scheduled refresh owner, and a human sign-off for the published interpretation."
 )
 
-download_df = scenario_df.assign(
-    commodity=commodity,
-    report=report,
-    previous_stocks=previous_stocks,
-    new_stocks=new_stocks,
-    consensus_stocks=consensus_stocks,
-    use=use,
-    implied_vol_pct=implied_vol,
-    horizon_days=horizon_days,
-)
+
+download_data = comparison.copy()
+download_data.insert(0, "commodity", case.commodity)
+download_data.insert(1, "report", case.report)
+download_data.insert(2, "current_release_date", case.current_release_date)
+download_data.insert(3, "previous_release_date", case.previous_release_date)
 st.download_button(
-    "Download scenario snapshot",
-    data=download_df.to_csv(index=False).encode("utf-8"),
-    file_name="fryar_usda_outlook_snapshot.csv",
+    "Download normalized comparison (.csv)",
+    data=download_data.to_csv(index=False).encode("utf-8"),
+    file_name=f"{case.key}_usda_release_comparison.csv",
     mime="text/csv",
 )
