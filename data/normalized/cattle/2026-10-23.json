@@ -1,0 +1,23 @@
+{
+  "commodity": "cattle",
+  "data": {
+    "inventory": 11372,
+    "inventory_yoy_percent": 100,
+    "marketings": 1524,
+    "marketings_yoy_percent": 93,
+    "other_disappearance": 49,
+    "other_disappearance_yoy_percent": 96,
+    "placements": 1777,
+    "placements_yoy_percent": 88
+  },
+  "note": "Initial historical baseline from the validated October 2026 Cattle on Feed case.",
+  "parser_version": "seed-2026.11",
+  "raw_sha256": "seeded-case-no-raw-file",
+  "release_date": "2026-10-23",
+  "release_label": "October 2026 Cattle on Feed",
+  "schema_version": 1,
+  "snapshot_id": "2026-10-23",
+  "source_label": "October 2026 Cattle on Feed",
+  "source_url": "https://esmis.nal.usda.gov/sites/default/release-files/796119/cofd1026.pdf",
+  "validation_status": "passed"
+}
