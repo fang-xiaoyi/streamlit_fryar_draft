@@ -13,6 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from history_store import (
+    COMMODITY_CATALOG,
     build_case,
     case_records,
     format_snapshot_option,
@@ -42,15 +43,27 @@ st.caption("Official USDA snapshot → transparent formulas → extension-style 
 
 with st.sidebar:
     st.header("Choose a release vintage")
+    commodity_keys = list(COMMODITY_CATALOG)
     commodity = st.selectbox(
         "Commodity",
-        ["corn", "cattle"],
-        format_func=lambda key: "Corn — WASDE" if key == "corn" else "Cattle — Cattle on Feed",
+        commodity_keys,
+        format_func=lambda key: COMMODITY_CATALOG[key]["label"],
     )
+    commodity_meta = COMMODITY_CATALOG[commodity]
     records = case_records(commodity)
     latest = latest_snapshot(commodity)
     if not records:
-        st.error("At least two validated releases are needed for a comparison.")
+        st.info(
+            f"{commodity_meta['label']} is in the product catalog, but no validated "
+            f"release pair is available yet. The planned source family is "
+            f"**{commodity_meta['source_family']}**. Corn and Cattle are the current "
+            "working prototypes; this slot is ready for a future parser, normalized "
+            "snapshot, and automated report template."
+        )
+        st.caption(
+            "Planned workflow: source check → month-vintage parser → validation → "
+            "fact sheet → full report → historical release archive."
+        )
         st.stop()
     latest_id = latest.get("snapshot_id") if latest else None
     snapshot_ids = [str(row["snapshot_id"]) for row in records]

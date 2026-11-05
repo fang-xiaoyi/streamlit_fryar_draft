@@ -22,6 +22,58 @@ MANIFEST_PATH = DATA_DIR / "manifest.json"
 LATEST_PATH = DATA_DIR / "latest.json"
 
 
+# The catalog is intentionally broader than the currently seeded/validated
+# release store. This lets the app expose the product roadmap without
+# pretending that every commodity already has a parser and historical pair.
+COMMODITY_CATALOG: dict[str, dict[str, str]] = {
+    "corn": {
+        "label": "Corn — WASDE",
+        "status": "validated",
+        "source_family": "USDA WASDE",
+    },
+    "cattle": {
+        "label": "Cattle — Cattle on Feed",
+        "status": "validated",
+        "source_family": "USDA Cattle on Feed",
+    },
+    "soybeans": {
+        "label": "Soybeans — WASDE (planned)",
+        "status": "planned",
+        "source_family": "USDA WASDE",
+    },
+    "wheat": {
+        "label": "Wheat — WASDE (planned)",
+        "status": "planned",
+        "source_family": "USDA WASDE",
+    },
+    "cotton": {
+        "label": "Cotton — WASDE (planned)",
+        "status": "planned",
+        "source_family": "USDA WASDE",
+    },
+    "rice": {
+        "label": "Rice — WASDE (planned)",
+        "status": "planned",
+        "source_family": "USDA WASDE",
+    },
+    "hogs": {
+        "label": "Hogs — Hogs and Pigs (planned)",
+        "status": "planned",
+        "source_family": "USDA NASS Hogs and Pigs",
+    },
+    "broilers": {
+        "label": "Broilers — poultry outlook (planned)",
+        "status": "planned",
+        "source_family": "USDA poultry reports",
+    },
+    "milk": {
+        "label": "Milk — Milk Production (planned)",
+        "status": "planned",
+        "source_family": "USDA NASS Milk Production",
+    },
+}
+
+
 def _read_json(path: Path, default: Any) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
