@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+import importlib
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +12,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+# Streamlit Cloud can retain an older imported module during a hot reload.
+# Reload the small read-only store before importing its functions so the page
+# immediately picks up month-vintage comparison logic and the current catalog.
+import history_store as _history_store
+importlib.reload(_history_store)
 
 from history_store import (
     build_case,
