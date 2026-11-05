@@ -452,7 +452,7 @@ def _net_price(
         futures_gain = staged_ratio * (entry_price - price)
         return price + basis + futures_gain - storage + other_revenue_per_cwt
 
-    if strategy in {"Put option", "LRP", "Put floor", "LRP floor"}:
+    if strategy in {"Put option", "LRP"}:
         floor_payoff = np.maximum(params["strike"] - price, 0.0)
         protection_cost = hedge_ratio * params["premium"]
         return (
