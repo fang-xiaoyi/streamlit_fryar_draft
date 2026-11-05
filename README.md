@@ -10,7 +10,7 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 - an optional live USDA RMA LRP quote workflow that loads the official coverage price, coverage level, endorsement length, end date, and producer premium, then pre-fills the transparent scenario model;
 - price, production/quantity, basis, storage, hedge-share, target-price, and protection-cost inputs;
 - expected, P10, P50, and P90 net-price outcomes;
-- target-price probability and loss probability;
+- target-price probability, loss probability, positive-margin probability, P10/P50/P90 margin outcomes, CVaR10 downside, expected total margin, and probability of beating the unhedged benchmark;
 - an Extension-oriented interpretation layer;
 - a Rice case as an additional crop market;
 - a planned poultry feed-cost extension that passes corn and soybean-meal price risk through a ration into poultry margins;
@@ -19,10 +19,21 @@ This is an interview-preparation prototype for the UARK Fryar Center postdoctora
 The draft now includes three demonstrable tools in one Streamlit toolbox:
 
 1. **Fryar Producer Decision Lab** — the producer-first hedging and marketing tool in `app.py`.
-2. **Fryar USDA Release & Price Outlook Monitor** — the manual-input-first report/surprise/scenario page in `pages/2_USDA_Market_Outlook.py`.
+2. **Fryar USDA Release & Decision Report** — the real-data Corn and Cattle release comparison, formula layer, blank report template, auto-filled report, source check, and download workflow in `pages/2_USDA_Market_Outlook.py`.
 3. **Fryar Decision Bridge & Feedback Lab** — the role-specific margin bridge and anonymous workshop feedback page in `pages/3_Decision_Bridge.py`.
 
-The second and third pages intentionally use transparent manual inputs until the Center confirms USDA vintage handling, Bloomberg consensus access/display rights, futures/options/IV licensing, and scheduled-refresh ownership. The intended production architecture is to have one validated release snapshot feed both the monthly report and the hedging/marketing tool.
+The third page still uses transparent manual inputs. The second page now contains two official USDA snapshot cases: October 2026 versus September 2026 Corn WASDE and October 2026 versus September 2026 Cattle on Feed. November 2026 had not yet been released when the case was built, so the app flags the scheduled release rather than inventing data. The intended production architecture is to have one validated release snapshot feed both the monthly report and the hedging/marketing tool.
+
+### USDA release report case
+
+`usda_report_pipeline.py` keeps the normalized case data and formulas separate from the UI. The current cases include:
+
+- Corn: production, yield, total use, exports, ending stocks, stocks-to-use, and USDA farm-price revision.
+- Cattle: inventory, placements, marketings, other disappearance, release-to-release changes, and year-over-year percentages.
+
+The page shows a stable extension-style template with blank tokens, fills the template using the real USDA snapshot, and lets the user download both a Markdown report and a normalized CSV. A future scheduled job can replace the snapshot dictionary with a parser for the official USDA WASDE XLS/XML/TXT and NASS Cattle on Feed files, validate the release date and units, and publish the same report without changing the UI.
+
+The report preview/download now uses the local `Fryar-Center-logo.png`, the Center's cardinal-red visual accent (`#9E2B44`), Poppins-style typography, a branded header, “At a glance” metric cards, a red conclusion callout, a comparison table, methods/data note, official-source list, and University of Arkansas Division of Agriculture footer. The HTML download is self-contained: the logo is embedded so it does not depend on a local path after download.
 
 ## Live audience interaction for the stakeholder presentation
 
@@ -63,9 +74,26 @@ For a real interview or classroom demonstration, use a deployed HTTPS URL
 instead of `localhost`. The URL entered in the presenter screen is the URL
 encoded into the QR code.
 
-## Real-data integration plan
+## Real-data integration and versioned USDA pipeline
 
-The app is intentionally separated from data acquisition. A scheduled refresh job should call the functions in `data_connectors.py`, normalize the results, save raw and analysis-ready files, and let Streamlit read the latest validated snapshot. API keys should be stored in local Streamlit secrets or a deployment secret manager, never in the app or repository.
+The USDA page now uses a versioned release store under `data/`. The initial
+Corn and Cattle September/October 2026 records are normalized baselines. The
+scheduled `/.github/workflows/refresh-usda.yml` job checks official USDA PDFs,
+parses and validates them with `scripts/refresh_usda.py`, writes a new
+release-specific snapshot, generates a Fryar fact sheet plus full report, and
+commits only new validated files. It is safe to run repeatedly: an unchanged
+release/hash is skipped and a changed file becomes a revision rather than
+overwriting history.
+
+`data/latest.json` is only a pointer to the newest validated snapshot;
+`data/manifest.json` records the source URL, retrieval time, hash, parser
+version, revision, and validation status. The Streamlit page reads the
+normalized files and provides **Latest validated release** and **Historical
+release** selectors. Raw PDFs can remain in GitHub for this prototype and can
+later be moved to S3/Azure Blob while preserving the same normalized contract.
+
+API keys should be stored in local Streamlit secrets or a deployment secret
+manager, never in the app or repository.
 
 | Source | Access pattern | Intended use |
 |---|---|---|
@@ -98,7 +126,7 @@ streamlit run app.py
 
 ## Important limitations
 
-- No live futures, options, basis, or WASDE data are fetched in the current draft. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
+- The USDA report page uses validated versioned snapshots and a scheduled PDF refresh pipeline; if a new file cannot be parsed or validated, the prior release remains the latest published version and the Action run fails for review. No live futures, options, or basis data are fetched in the current draft. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
 - Price and production draws are illustrative and should not be used for actual marketing, insurance, or trading decisions.
 - The Put and LRP calculations are simplified demonstrations; contract sizes, margin, transaction costs, coverage rules, settlement conventions, actual sale weight, basis treatment, and data licensing must be specified before public release.
 - The current draft does not optimize a user's timing. It compares explicitly defined strategies and reports tradeoffs.
@@ -109,6 +137,7 @@ streamlit run app.py
 2. Replace illustrative inputs with approved historical and market-implied data sources; expand the RMA workflow to allow an explicit effective-date selector and agent-facing quote export.
 3. Specify contract mechanics, basis treatment, transaction costs, and insurance rules.
 4. Backtest the downside labels and target-price probabilities.
-5. Add saved cases, downloadable reports, and a stable monthly update workflow.
+5. Review the first scheduled USDA refresh run and confirm the PDF parser against current releases.
 6. Add live data credentials only after the Center confirms access, licensing, allowed redistribution, and update ownership.
-7. Add the poultry feed-cost view after the row-crop workflow is validated, using an explicit ration, feed-conversion ratio, procurement horizon, and broiler output-price assumption.
+7. Move raw PDFs to object storage if repository size becomes a constraint; keep normalized snapshots and reports versioned.
+8. Add the poultry feed-cost view after the row-crop workflow is validated, using an explicit ration, feed-conversion ratio, procurement horizon, and broiler output-price assumption.
