@@ -16,7 +16,9 @@ import streamlit.components.v1 as components
 # Streamlit Cloud can retain an older imported module during a hot reload.
 # Reload the small read-only store before importing its functions so the page
 # immediately picks up month-vintage comparison logic and the current catalog.
+import usda_report_pipeline as _pipeline
 import history_store as _history_store
+importlib.reload(_pipeline)
 importlib.reload(_history_store)
 
 from history_store import (

@@ -26,8 +26,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import usda_report_pipeline as _pipeline
 import history_store as _history_store
 
+# Streamlit Cloud can keep a long-lived Python process during a page refresh.
+# Reload the pipeline before the history store so the Full Report preview uses
+# the current integrated market-response, forecast, and hedging sections.
+importlib.reload(_pipeline)
 importlib.reload(_history_store)
 
 from history_store import (  # noqa: E402
