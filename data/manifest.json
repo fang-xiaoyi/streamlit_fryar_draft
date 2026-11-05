@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "snapshots": [
+    {
+      "commodity": "cattle",
+      "parser_version": "seed-2026.11",
+      "raw_sha256": "seeded-case-no-raw-file",
+      "release_date": "2026-09-18",
+      "release_label": "September 2026 Cattle on Feed",
+      "revision": null,
+      "snapshot_id": "2026-09-18",
+      "source_url": "https://www.nass.usda.gov/Publications/Todays_Reports/reports/cofd0926.pdf",
+      "validation_status": "passed"
+    },
+    {
+      "commodity": "cattle",
+      "parser_version": "seed-2026.11",
+      "raw_sha256": "seeded-case-no-raw-file",
+      "release_date": "2026-10-23",
+      "release_label": "October 2026 Cattle on Feed",
+      "revision": null,
+      "snapshot_id": "2026-10-23",
+      "source_url": "https://esmis.nal.usda.gov/sites/default/release-files/796119/cofd1026.pdf",
+      "validation_status": "passed"
+    },
+    {
+      "commodity": "corn",
+      "parser_version": "seed-2026.11",
+      "raw_sha256": "seeded-case-no-raw-file",
+      "release_date": "2026-09-11",
+      "release_label": "September 2026 WASDE",
+      "revision": null,
+      "snapshot_id": "2026-09-11",
+      "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde0926.pdf",
+      "validation_status": "passed"
+    },
+    {
+      "commodity": "corn",
+      "parser_version": "seed-2026.11",
+      "raw_sha256": "seeded-case-no-raw-file",
+      "release_date": "2026-10-09",
+      "release_label": "October 2026 WASDE",
+      "revision": null,
+      "snapshot_id": "2026-10-09",
+      "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde1026.pdf",
+      "validation_status": "passed"
+    }
+  ],
+  "updated_at": "2026-11-04T00:00:00Z"
+}
