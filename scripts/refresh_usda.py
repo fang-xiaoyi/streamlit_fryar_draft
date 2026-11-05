@@ -169,12 +169,15 @@ def _find_line(lines: list[str], labels: tuple[str, ...], start: int = 0) -> str
     for label in labels:
         needle = " ".join(label.lower().split())
         for index in range(start, len(lines)):
-            if needle in lowered[index]:
-                return lines[index]
+            window = " ".join(lowered[index : index + 4])
+            if needle in window:
+                return " ".join(lines[index : index + 4])
     raise RuntimeError(f"Could not find a required table row: {labels[0]}")
 
 
 def _last_number(lines: list[str], labels: tuple[str, ...], start: int = 0) -> float:
+    # Return the last value in a short extraction window.  This handles both
+    # one-line table rows and PDFs where a row label is split from its values.
     line = _find_line(lines, labels, start=start)
     numbers = _number_tokens(line)
     if not numbers:
@@ -206,7 +209,8 @@ def parse_corn_wasde(text: str, release_date: date, source_url: str) -> dict[str
         (
             index
             for index in range(table_start, min(table_start + 80, len(lines)))
-            if " ".join(lines[index].lower().split()) in {"corn", "corn 2024/25"}
+            if " ".join(lines[index].lower().split()) == "corn"
+            or " ".join(lines[index].lower().split()).startswith("corn 2024/25")
         ),
         table_start,
     )
