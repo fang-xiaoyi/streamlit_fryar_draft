@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import importlib
 import os
 import uuid
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -8,6 +9,12 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+
+# Streamlit Cloud may rerun this entry point inside a process that still has an
+# older ``core`` module cached. Reload before importing the new livestock
+# benchmark and LRP scenario helpers so a hot deployment cannot fail halfway.
+import core as _core
+importlib.reload(_core)
 
 from audience_poll import (
     POLL_ID,
