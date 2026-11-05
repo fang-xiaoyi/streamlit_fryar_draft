@@ -365,6 +365,122 @@ def fetch_barchart_quote(
     )
 
 
+def fetch_barchart_history(
+    api_key: str,
+    symbol: str,
+    start_date: date | str,
+    end_date: date | str,
+    interval: str = "daily",
+    timeout: int = 30,
+) -> FetchResult:
+    """Fetch historical futures prices from an entitled Barchart feed.
+
+    The page uses this connector for contract-level event studies, where a
+    continuous futures series is not sufficient to calculate a calendar
+    spread.  Credentials stay in Streamlit secrets/environment variables and
+    are never returned in the result or shown in the UI.
+    """
+
+    url = "https://ondemand.websol.barchart.com/getHistory.json"
+    params: dict[str, Any] = {
+        "apikey": _require(api_key, "BARCHART_API_KEY"),
+        "symbol": symbol,
+        "type": interval,
+        "startDate": pd.Timestamp(start_date).date().isoformat(),
+        "endDate": pd.Timestamp(end_date).date().isoformat(),
+    }
+    response = requests.get(url, params=params, timeout=timeout)
+    response.raise_for_status()
+    payload = response.json()
+    rows = payload.get("results", [])
+    return FetchResult(
+        source="Barchart OnDemand historical futures",
+        url=response.url,
+        retrieved_at=_timestamp(),
+        data=pd.DataFrame(rows),
+        message=(
+            "Barchart historical futures data retrieved through the configured "
+            "OnDemand API entitlement."
+        ),
+    )
+
+
+def fetch_yahoo_chart_history(
+    symbol: str,
+    start_date: date | str,
+    end_date: date | str,
+    interval: str = "1d",
+    timeout: int = 30,
+) -> FetchResult:
+    """Fetch a public daily continuous-futures history for fallback context.
+
+    This is intentionally labeled as a continuous reference series.  It is
+    useful for the nearby-price response when no licensed contract-level feed
+    is configured, but it must not be used to manufacture a deferred contract
+    or a calendar spread.
+    """
+
+    start = pd.Timestamp(start_date)
+    end = pd.Timestamp(end_date)
+    if start.tzinfo is None:
+        start = start.tz_localize("UTC")
+    else:
+        start = start.tz_convert("UTC")
+    if end.tzinfo is None:
+        end = end.tz_localize("UTC")
+    else:
+        end = end.tz_convert("UTC")
+    end = end + pd.Timedelta(days=1)
+
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    params = {
+        "period1": int(start.timestamp()),
+        "period2": int(end.timestamp()),
+        "interval": interval,
+        "events": "history",
+        "includeAdjustedClose": "true",
+    }
+    response = requests.get(
+        url,
+        params=params,
+        headers={"User-Agent": "Fryar-Center-Market-Response/1.0"},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    chart = payload.get("chart", {})
+    if chart.get("error"):
+        raise RuntimeError(str(chart["error"]))
+    results = chart.get("result") or []
+    if not results:
+        raise RuntimeError(f"No Yahoo Finance history returned for {symbol}.")
+    result = results[0]
+    timestamps = result.get("timestamp", [])
+    quote = (result.get("indicators", {}).get("quote") or [{}])[0]
+    rows: list[dict[str, Any]] = []
+    for idx, stamp in enumerate(timestamps):
+        rows.append(
+            {
+                "date": pd.to_datetime(stamp, unit="s", utc=True).date().isoformat(),
+                "open": (quote.get("open") or [None] * len(timestamps))[idx],
+                "high": (quote.get("high") or [None] * len(timestamps))[idx],
+                "low": (quote.get("low") or [None] * len(timestamps))[idx],
+                "close": (quote.get("close") or [None] * len(timestamps))[idx],
+                "volume": (quote.get("volume") or [None] * len(timestamps))[idx],
+            }
+        )
+    return FetchResult(
+        source="Yahoo Finance chart feed (continuous futures reference)",
+        url=response.url,
+        retrieved_at=_timestamp(),
+        data=pd.DataFrame(rows),
+        message=(
+            "Public continuous-futures reference data retrieved. It is not a "
+            "substitute for licensed contract-level settlement data."
+        ),
+    )
+
+
 def fetch_barchart_futures_options(
     api_key: str,
     root: str,

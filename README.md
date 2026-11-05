@@ -24,13 +24,15 @@ compares LRP, put-option, cash-sale, futures, and staged-hedge scenarios. Crop
 workflows do not show LRP; they show crop-appropriate futures, staged-hedge, and
 put-option tools.
 
-The draft now includes three demonstrable tools in one Streamlit toolbox:
+The draft now includes five demonstrable tools in one Streamlit toolbox:
 
 1. **Fryar Producer Decision Lab** — the producer-first hedging and marketing tool in `app.py`.
 2. **Fryar USDA Release & Decision Report** — the real-data Corn and Cattle release comparison, formula layer, blank report template, auto-filled report, source check, and download workflow in `pages/2_USDA_Market_Outlook.py`.
 3. **Fryar Decision Bridge & Feedback Lab** — the role-specific margin bridge and anonymous workshop feedback page in `pages/3_Decision_Bridge.py`.
+4. **Fryar Supply & Demand Analysis** — the transparent USDA balance-sheet calculation layer in `pages/4_Supply_Demand_Analysis.py`.
+5. **Fryar Market Price Response** — the USDA event-study layer in `pages/5_Market_Price_Response.py`, with nearby futures movement, deferred-minus-nearby calendar spread, and plain-language interpretation.
 
-The third page still uses transparent manual inputs. The second page now contains two official USDA snapshot cases: October 2026 versus September 2026 Corn WASDE and October 2026 versus September 2026 Cattle on Feed. November 2026 had not yet been released when the case was built, so the app flags the scheduled release rather than inventing data. The intended production architecture is to have one validated release snapshot feed both the monthly report and the hedging/marketing tool.
+The third page still uses transparent manual inputs. The USDA pages contain two official snapshot cases: October 2026 versus September 2026 Corn WASDE and October 2026 versus September 2026 Cattle on Feed. November 2026 had not yet been released when the case was built, so the app flags the scheduled release rather than inventing data. The intended production architecture is to have one validated release snapshot feed the monthly report, the market-price event study, and the hedging/marketing tool.
 
 ### USDA release report case
 
@@ -114,7 +116,7 @@ manager, never in the app or repository.
 | Barchart OnDemand | Separate API key and entitlement | Futures quotes, historical prices, futures options, volatility, and Greeks where licensed |
 | CFTC COT | Public weekly downloads | Commercial and managed-money positioning as supplementary market context |
 
-The current connectors cover NASS, AMS, FAS PSD, Barchart OnDemand, public file downloads, the official RMA RIRS LRP quote report, RMA/CFTC-style bulk files, and entitled CME DataMine downloads. The RMA quote button uses the public **LRP Coverage, Prices, Rates, and Actual Ending Values** report and briefly caches the result so widget reruns do not repeatedly query RMA. It is quote data, not a purchase API; a producer still works with an approved crop-insurance agent to buy a policy. CME or Barchart real-time ingestion should run in a scheduled or persistent backend worker rather than inside a Streamlit browser session.
+The current connectors cover NASS, AMS, FAS PSD, Barchart OnDemand, a public continuous-futures chart fallback, public file downloads, the official RMA RIRS LRP quote report, RMA/CFTC-style bulk files, and entitled CME DataMine downloads. The Market Price Response page uses Barchart historical contract data when `BARCHART_API_KEY` is configured; otherwise it uses a clearly labeled continuous Corn reference for the nearby leg and requires manual or licensed data for the deferred leg. The RMA quote button uses the public **LRP Coverage, Prices, Rates, and Actual Ending Values** report and briefly caches the result so widget reruns do not repeatedly query RMA. It is quote data, not a purchase API; a producer still works with an approved crop-insurance agent to buy a policy. CME or Barchart real-time ingestion should run in a scheduled or persistent backend worker rather than inside a Streamlit browser session.
 
 Official RMA report endpoint used by the connector:
 `https://webapp.rma.usda.gov/apps/RIRS/LRPCoveragePricesRatesActualEndingValues.aspx`
@@ -134,7 +136,7 @@ streamlit run app.py
 
 ## Important limitations
 
-- The USDA report page uses validated versioned snapshots and a scheduled PDF refresh pipeline; if a new file cannot be parsed or validated, the prior release remains the latest published version and the Action run fails for review. No live futures, options, or basis data are fetched in the current draft. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
+- The USDA report page uses validated versioned snapshots and a scheduled PDF refresh pipeline; if a new file cannot be parsed or validated, the prior release remains the latest published version and the Action run fails for review. The Market Price Response page can fetch real historical nearby and deferred contract data through an entitled Barchart key; without that key it does not invent a spread from continuous data. RMA LRP quotes are fetched only when the user clicks **Load latest official RMA quote** in the livestock view.
 - Price and production draws are illustrative and should not be used for actual marketing, insurance, or trading decisions.
 - The Put and LRP calculations are simplified demonstrations; contract sizes, margin, transaction costs, coverage rules, settlement conventions, actual sale weight, basis treatment, and data licensing must be specified before public release.
 - The current draft does not optimize a user's timing. It compares explicitly defined strategies and reports tradeoffs.
