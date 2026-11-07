@@ -7,6 +7,7 @@ shown as comparison benchmarks with explicit unit and horizon warnings.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 import importlib
 from pathlib import Path
 import sys
@@ -21,10 +22,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import data_connectors as _data_connectors
 import history_store as _history_store
 
+importlib.reload(_data_connectors)
 importlib.reload(_history_store)
 
+from data_connectors import fetch_yahoo_chart_history  # noqa: E402
 from history_store import (  # noqa: E402
     COMMODITY_CATALOG,
     build_case,
@@ -172,6 +176,45 @@ def _format_benchmarks(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_realized_volatility(
+    symbol: str,
+    lookback_years: int,
+    end_date_iso: str,
+) -> dict[str, object]:
+    """Estimate annualized realized volatility from a public reference series.
+
+    This is deliberately labeled as a continuous-futures reference.  It gives
+    the interview prototype a real historical comparison, while production
+    publication should use an approved contract-level history with a documented
+    roll convention and redistribution license.
+    """
+
+    end_date = pd.Timestamp(end_date_iso).date()
+    start_date = end_date - timedelta(days=int(365.25 * lookback_years + 30))
+    result = fetch_yahoo_chart_history(symbol, start_date, end_date)
+    frame = result.data.copy()
+    if frame.empty or "close" not in frame.columns or "date" not in frame.columns:
+        raise ValueError("The historical reference returned no close prices.")
+    frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
+    frame["close"] = pd.to_numeric(frame["close"], errors="coerce")
+    frame = frame.dropna(subset=["date", "close"]).sort_values("date")
+    frame = frame.loc[frame["close"] > 0].copy()
+    returns = np.log(frame["close"] / frame["close"].shift(1)).dropna()
+    if len(returns) < 60:
+        raise ValueError("The historical reference returned too few observations.")
+    realized = float(returns.std(ddof=1) * np.sqrt(252.0))
+    return {
+        "annualized_volatility": realized,
+        "observations": int(len(returns)),
+        "start_date": frame["date"].min().date().isoformat(),
+        "end_date": frame["date"].max().date().isoformat(),
+        "source": result.source,
+        "source_url": result.url,
+        "retrieved_at": result.retrieved_at,
+    }
+
+
 def _scenario_frame(
     low: float,
     middle: float,
@@ -199,6 +242,10 @@ def _interpretation(
     middle: float,
     width: float,
     benchmarks: pd.DataFrame,
+    realized_volatility: float,
+    implied_volatility: float,
+    scenario_volatility: float,
+    volatility_method: str,
 ) -> list[str]:
     lines: list[str] = []
     if current_stu < reference_stu:
@@ -213,7 +260,22 @@ def _interpretation(
         lines.append("Current stocks-to-use equals the selected reference level, so the balance-sheet adjustment to the middle scenario is zero.")
 
     lines.append(
-        f"The model middle scenario is {_price(middle)}/bu. The low/high band is approximately {_price(width)}/bu on either side because the options-implied-volatility input determines the width."
+        f"The model middle scenario is {_price(middle)}/bu. The low/high band is approximately {_price(width)}/bu on either side because the selected volatility rule determines the width."
+    )
+
+    volatility_gap_pp = (implied_volatility - realized_volatility) * 100.0
+    if volatility_gap_pp > 0.05:
+        lines.append(
+            f"Forward-looking implied volatility is {volatility_gap_pp:.1f} percentage points above the historical realized estimate, so the options market is pricing more uncertainty than the selected reference window experienced."
+        )
+    elif volatility_gap_pp < -0.05:
+        lines.append(
+            f"Forward-looking implied volatility is {abs(volatility_gap_pp):.1f} percentage points below the historical realized estimate, so the options market is pricing less uncertainty than the selected reference window experienced."
+        )
+    else:
+        lines.append("Forward-looking implied volatility and historical realized volatility are broadly aligned for the selected window.")
+    lines.append(
+        f"The scenario band uses {volatility_method.lower()} at {scenario_volatility:.1%}. This is an uncertainty range, not a calibrated probability of profit."
     )
 
     comparable = benchmarks[benchmarks["comparable"] & benchmarks["price_usd_bu_context"].notna()]
@@ -311,6 +373,32 @@ with st.sidebar:
         format="%.1f",
         help="Manual placeholder until an entitled options feed is connected. In production, read IV from the selected futures-option contract.",
     )
+    realized_lookback_years = st.selectbox(
+        "Historical realized-volatility window",
+        [1, 3, 5],
+        index=1,
+        format_func=lambda years: f"{years}-year daily reference",
+        help="Computed from daily log returns on the public continuous Corn reference. Production publication should use an approved contract-level history and roll convention.",
+    )
+    manual_realized_vol = st.number_input(
+        "Fallback historical volatility (%)",
+        min_value=1.0,
+        max_value=100.0,
+        value=20.0,
+        step=0.5,
+        format="%.1f",
+        help="Used only if the public historical reference cannot be loaded.",
+    )
+    volatility_method = st.selectbox(
+        "Price-band volatility rule",
+        [
+            "Conservative max (IV vs historical)",
+            "Average of IV and historical",
+            "Implied volatility only",
+            "Historical volatility only",
+        ],
+        help="The prototype keeps the rule visible. The conservative default avoids making the displayed range narrower than either volatility signal.",
+    )
     forecast_days = st.selectbox(
         "Forecast horizon",
         [90, 180, 365],
@@ -340,7 +428,36 @@ current_stu = float(current["ending_stocks"]) / float(current["total_use"]) * 10
 anchor_price = float(current["farm_price"])
 stu_adjustment = float(stu_beta) * (current_stu - float(reference_stu))
 middle_price = anchor_price + stu_adjustment
-volatility_width = middle_price * (float(annualized_iv) / 100.0) * np.sqrt(float(forecast_days) / 365.0) * float(z_value)
+
+historical_volatility_info: dict[str, object] | None = None
+historical_volatility_error: str | None = None
+try:
+    historical_volatility_info = _load_realized_volatility(
+        "ZC=F",
+        int(realized_lookback_years),
+        date.today().isoformat(),
+    )
+except Exception as exc:
+    historical_volatility_error = f"{type(exc).__name__}: {exc}"
+
+if historical_volatility_info:
+    historical_volatility = float(historical_volatility_info["annualized_volatility"])
+    historical_volatility_source = str(historical_volatility_info["source"])
+else:
+    historical_volatility = float(manual_realized_vol) / 100.0
+    historical_volatility_source = "Manual fallback input"
+
+implied_volatility = float(annualized_iv) / 100.0
+if volatility_method == "Conservative max (IV vs historical)":
+    scenario_volatility = max(implied_volatility, historical_volatility)
+elif volatility_method == "Average of IV and historical":
+    scenario_volatility = (implied_volatility + historical_volatility) / 2.0
+elif volatility_method == "Historical volatility only":
+    scenario_volatility = historical_volatility
+else:
+    scenario_volatility = implied_volatility
+
+volatility_width = middle_price * scenario_volatility * np.sqrt(float(forecast_days) / 365.0) * float(z_value)
 low_price = max(0.0, middle_price - volatility_width)
 high_price = middle_price + volatility_width
 
@@ -356,10 +473,75 @@ big_cols[4].metric("High scenario", _price(high_price), f"{_price(volatility_wid
 
 st.caption(
     f"Current case: {case.current_label} · USDA release date: {case.current_release_date} · "
-    f"forecast horizon: {forecast_days} days · band multiplier: {z_value}"
+    f"forecast horizon: {forecast_days} days · band multiplier: {z_value} · "
+    f"band volatility: {scenario_volatility:.1%}"
 )
 
-st.subheader("2. Forecast scenarios")
+st.subheader("2. Forward-looking IV versus historical realized volatility")
+volatility_cols = st.columns(4)
+volatility_cols[0].metric(
+    "Historical realized volatility",
+    f"{historical_volatility:.1%}",
+    f"{realized_lookback_years}-year daily reference",
+)
+volatility_cols[1].metric(
+    "Market-implied volatility",
+    f"{implied_volatility:.1%}",
+    "manual IV in prototype",
+)
+volatility_cols[2].metric(
+    "IV − historical",
+    f"{(implied_volatility - historical_volatility) * 100:+.1f} pp",
+    "forward-looking risk premium",
+)
+volatility_cols[3].metric(
+    "Volatility used in band",
+    f"{scenario_volatility:.1%}",
+    volatility_method,
+)
+
+volatility_frame = pd.DataFrame(
+    [
+        ["Historical realized volatility", historical_volatility * 100.0, "Daily log-return standard deviation × √252", historical_volatility_source],
+        ["Market-implied volatility", implied_volatility * 100.0, "Manual option-implied input", "Not live until an entitled options feed is connected"],
+        ["Scenario volatility", scenario_volatility * 100.0, volatility_method, "Transparent prototype rule"],
+    ],
+    columns=["Measure", "Annualized volatility (%)", "How it is used", "Data status"],
+)
+st.dataframe(volatility_frame, width="stretch", hide_index=True)
+
+volatility_fig = go.Figure(
+    go.Bar(
+        x=["Historical realized", "Market-implied IV", "Scenario band"],
+        y=[historical_volatility * 100.0, implied_volatility * 100.0, scenario_volatility * 100.0],
+        marker_color=["#4c956c", "#d97706", "#102a43"],
+        text=[f"{value:.1f}%" for value in [historical_volatility * 100.0, implied_volatility * 100.0, scenario_volatility * 100.0]],
+        textposition="outside",
+        hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+    )
+)
+volatility_fig.update_layout(
+    title="Backward-looking realized volatility versus forward-looking IV",
+    yaxis_title="Annualized volatility (%)",
+    height=330,
+    template="plotly_white",
+    margin=dict(l=10, r=10, t=55, b=10),
+    showlegend=False,
+)
+st.plotly_chart(volatility_fig, width="stretch", config={"displayModeBar": False})
+if historical_volatility_error:
+    st.warning(
+        "The public historical reference could not be loaded for this session, so the fallback input is being used. "
+        f"Details: {historical_volatility_error}"
+    )
+elif historical_volatility_info:
+    st.caption(
+        f"Historical reference: {historical_volatility_info['start_date']} to {historical_volatility_info['end_date']} · "
+        f"{historical_volatility_info['observations']:,} daily returns · retrieved {historical_volatility_info['retrieved_at']}. "
+        "This continuous-futures series is for prototype context, not a licensed contract-level publication feed."
+    )
+
+st.subheader("3. Forecast scenarios")
 scenario_frame = _scenario_frame(
     low_price,
     middle_price,
@@ -416,7 +598,7 @@ band_fig.update_layout(
 )
 st.plotly_chart(band_fig, width="stretch", config={"displayModeBar": False})
 
-st.subheader("3. Benchmark comparison")
+st.subheader("4. Benchmark comparison")
 st.dataframe(_format_benchmarks(benchmarks), width="stretch", hide_index=True)
 st.caption(
     "Comparable rows are U.S. farm-price style values for the same marketing-year horizon. OECD-FAO is a global maize reference in USD/tonne and is shown for context only; it is not part of the U.S. band."
@@ -425,7 +607,7 @@ for _, row in benchmarks.iterrows():
     if pd.notna(row.get("source_url")):
         st.markdown(f"- [{row['source']}]({row['source_url']}) — {row['source_note']}")
 
-st.subheader("4. Interpretation for the audience")
+st.subheader("5. Interpretation for the audience")
 interpretation = _interpretation(
     current_stu,
     float(reference_stu),
@@ -433,6 +615,10 @@ interpretation = _interpretation(
     middle_price,
     volatility_width,
     benchmarks,
+    historical_volatility,
+    implied_volatility,
+    scenario_volatility,
+    volatility_method,
 )
 st.markdown(
     '<div class="interpretation"><strong>How to explain this chart:</strong><br>'
@@ -455,7 +641,7 @@ high_price = middle_price + volatility_width""",
         "The live version should replace beta and implied volatility with estimated historical parameters and the selected contract's option-implied volatility. The formulas remain visible so an Extension audience can audit the result."
     )
 
-st.subheader("5. Data and production status")
+st.subheader("6. Data and production status")
 status_frame = pd.DataFrame(
     [
         ["USDA WASDE anchor", "farm-price projection, release date, vintage", "Validated October 2026 Corn case", "Connected"],
@@ -463,6 +649,7 @@ status_frame = pd.DataFrame(
         ["USDA Agricultural Baseline", "10-year U.S. projection and vintage", "Versioned benchmark CSV with source link", "Seeded; refresh annually"],
         ["FAPRI-MU", "10-year U.S. baseline and workbook vintage", "Versioned benchmark CSV; provisional value flagged", "Needs workbook refresh"],
         ["OECD-FAO", "global maize reference, USD/tonne, horizon", "Versioned benchmark CSV with source link", "Context only"],
+        ["Historical realized volatility", "daily close, log returns, window, annualization", f"{historical_volatility_source}; {realized_lookback_years}-year window", "Connected as reference fallback"],
         ["Options-implied volatility", "contract, strike, expiry, IV timestamp", "Manual input in this draft", "Not live yet"],
         ["Historical validation", "forecast error, coverage, calibration", "Future backtest table", "Next model step"],
     ],
@@ -481,9 +668,13 @@ download_frame.insert(2, "release_date", case.current_release_date)
 download_frame.insert(3, "current_stocks_to_use_pct", current_stu)
 download_frame.insert(4, "reference_stocks_to_use_pct", float(reference_stu))
 download_frame.insert(5, "annualized_iv_pct", float(annualized_iv))
-download_frame.insert(6, "forecast_days", forecast_days)
-download_frame.insert(7, "band_multiplier", float(z_value))
-download_frame.insert(8, "source", "USDA WASDE anchor + transparent STU sensitivity + manual IV")
+download_frame.insert(6, "historical_realized_volatility_pct", historical_volatility * 100.0)
+download_frame.insert(7, "volatility_gap_iv_minus_historical_pp", (implied_volatility - historical_volatility) * 100.0)
+download_frame.insert(8, "scenario_volatility_pct", scenario_volatility * 100.0)
+download_frame.insert(9, "volatility_method", volatility_method)
+download_frame.insert(10, "forecast_days", forecast_days)
+download_frame.insert(11, "band_multiplier", float(z_value))
+download_frame.insert(12, "source", "USDA WASDE anchor + transparent STU sensitivity + historical reference + manual IV")
 st.download_button(
     "Download price forecast CSV",
     download_frame.to_csv(index=False).encode("utf-8"),
@@ -492,5 +683,5 @@ st.download_button(
 )
 
 st.caption(
-    "This page is an educational prototype for the Fryar Center's recurring USDA report. Before publication, refresh benchmark files, connect option-implied volatility, estimate the historical stocks-to-use relationship, and backtest scenario coverage."
+    "This page is an educational prototype for the Fryar Center's recurring USDA report. Historical realized volatility is calculated from a public continuous-futures reference for demonstration; before publication, use an approved contract-level history, connect option-implied volatility, estimate the historical stocks-to-use relationship, and backtest scenario coverage."
 )
