@@ -49,6 +49,11 @@ def effective_price(spot_scenario: float, strategy: str) -> float:
     """Calculate a simplified seller-side effective price."""
 
     cash_price = spot_scenario + basis
+    if strategy == "Cash sale now":
+        # Cash-sale baseline: lock the current futures reference plus basis.
+        # This page intentionally keeps the simplified Decision Bridge model
+        # without a separate storage-cost input.
+        return current_futures + basis
     if strategy == "Unhedged / wait":
         return cash_price
     if strategy == "Futures hedge":
@@ -63,7 +68,7 @@ def effective_price(spot_scenario: float, strategy: str) -> float:
     raise ValueError(f"Unknown strategy: {strategy}")
 
 
-strategies = ["Unhedged / wait", "Futures hedge", "Put / floor", "Staged 50/50"]
+strategies = ["Cash sale now", "Unhedged / wait", "Futures hedge", "Put / floor", "Staged 50/50"]
 rows: list[dict[str, object]] = []
 for strategy in strategies:
     for scenario, price in scenario_prices.items():
