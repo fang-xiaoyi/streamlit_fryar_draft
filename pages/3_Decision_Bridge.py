@@ -18,6 +18,12 @@ st.caption(
     "role-specific margins, then collect lightweight anonymous feedback"
 )
 
+linked_forecast = st.session_state.get("fryar_price_scenario_snapshot")
+has_linked_forecast = (
+    isinstance(linked_forecast, dict)
+    and all(key in linked_forecast for key in ("low", "middle", "high"))
+)
+
 with st.sidebar:
     st.header("User pathway")
     role = st.selectbox(
@@ -36,10 +42,37 @@ with st.sidebar:
     put_premium = st.number_input("Illustrative put premium", min_value=0.0, value=0.18, step=0.01)
 
     st.divider()
-    st.subheader("Tool 2 snapshot")
-    low = st.number_input("Low scenario price", min_value=0.0, value=3.65, step=0.05)
-    middle = st.number_input("Middle scenario price", min_value=0.0, value=4.15, step=0.05)
-    high = st.number_input("High scenario price", min_value=0.0, value=4.75, step=0.05)
+    st.subheader("Tool 2 forecast scenarios")
+    use_linked_forecast = False
+    if has_linked_forecast:
+        use_linked_forecast = st.checkbox(
+            "Use linked forecast scenarios",
+            value=True,
+            key="decision_bridge_use_linked_forecast",
+            help="Use the commodity, release, and low/middle/high values from Commodity Price Forecast.",
+        )
+
+    if use_linked_forecast:
+        low = float(linked_forecast["low"])
+        middle = float(linked_forecast["middle"])
+        high = float(linked_forecast["high"])
+        st.caption(
+            f"Linked: {linked_forecast.get('commodity_label', 'Commodity')} · "
+            f"{linked_forecast.get('release_label', 'selected release')} · "
+            f"snapshot {linked_forecast.get('snapshot_id', '—')}"
+        )
+        st.write(f"Low ${low:.2f} · Middle ${middle:.2f} · High ${high:.2f}")
+    else:
+        st.caption("Manual fallback. Open Commodity Price Forecast first to link its validated range.")
+        low = st.number_input(
+            "Low scenario price", min_value=0.0, value=3.65, step=0.05, key="decision_bridge_manual_low"
+        )
+        middle = st.number_input(
+            "Middle scenario price", min_value=0.0, value=4.15, step=0.05, key="decision_bridge_manual_middle"
+        )
+        high = st.number_input(
+            "High scenario price", min_value=0.0, value=4.75, step=0.05, key="decision_bridge_manual_high"
+        )
 
 
 scenario_prices = {"Low": low, "Middle": middle, "High": high}
@@ -110,10 +143,16 @@ for strategy in strategies:
 
 summary_df = pd.DataFrame(summary_rows)
 
+st.caption(
+    "Illustrative scenario weights for this teaching view: Low 20%, Middle 60%, High 20%. "
+    "These weights are not market-implied probabilities."
+)
+
 st.subheader(f"{role}: what does the market snapshot mean for the operation?")
 st.info(
     "This page is the bridge between the USDA outlook and a local decision. "
-    "The scenarios can be pasted from Tool 2 now; a production version would pass a validated snapshot automatically."
+    "When linked, the page uses the same commodity, release vintage, and low/middle/high range as Commodity Price Forecast. "
+    "The hedge entry price and farm assumptions remain operation-specific."
 )
 
 metric_cols = st.columns(4)

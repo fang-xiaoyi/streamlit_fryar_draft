@@ -461,6 +461,26 @@ volatility_width = middle_price * scenario_volatility * np.sqrt(float(forecast_d
 low_price = max(0.0, middle_price - volatility_width)
 high_price = middle_price + volatility_width
 
+# Share the validated forecast scenarios with the downstream Decision Bridge.
+# Streamlit multipage apps keep session_state across page navigation, so the
+# producer tool can use exactly the same release, commodity, and price range.
+st.session_state["fryar_price_scenario_snapshot"] = {
+    "source": "Commodity Price Forecast",
+    "commodity_key": commodity,
+    "commodity_label": COMMODITY_CATALOG[commodity]["label"],
+    "snapshot_id": str(selected_id),
+    "release_label": case.current_label,
+    "release_date": case.current_release_date,
+    "low": float(low_price),
+    "middle": float(middle_price),
+    "high": float(high_price),
+    "anchor": float(anchor_price),
+    "stu_adjustment": float(stu_adjustment),
+    "forecast_days": int(forecast_days),
+    "scenario_volatility": float(scenario_volatility),
+    "band_multiplier": float(z_value),
+}
+
 benchmarks = _load_benchmarks()
 
 st.subheader("1. Big picture: the price range")
