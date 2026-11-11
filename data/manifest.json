@@ -80,7 +80,19 @@
       "snapshot_id": "2026-10-09",
       "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde1026.pdf",
       "validation_status": "passed"
+    },
+    {
+      "commodity": "corn",
+      "parser_version": "usda-refresh-1.0",
+      "raw_sha256": "c9d63b4b07dd48626ebf4bb5ab57bd52046f11cd5d6c968043fefd5e3283bcc2",
+      "release_date": "2026-11-01",
+      "release_label": "Corn November 2026",
+      "retrieved_at": "2026-11-11T02:08:30.696320+00:00",
+      "revision": null,
+      "snapshot_id": "2026-11-01",
+      "source_url": "https://www.usda.gov/oce/commodity/wasde/wasde1126.pdf",
+      "validation_status": "passed"
     }
   ],
-  "updated_at": "2026-11-05T16:53:59.459432+00:00"
+  "updated_at": "2026-11-11T02:08:30.697018+00:00"
 }
